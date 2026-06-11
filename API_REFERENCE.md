@@ -119,28 +119,35 @@ def fetch_all_active(max_markets: int = 500) -> list[Market]:
 
 ## Anthropic API
 
-**SDK:** `anthropic` (Python)  
-**Model:** `claude-sonnet-4-20250514`  
-**Web search tool:** `web_search_20250305`
+**SDK:** `anthropic` (Python, synchronous client)  
+**Model:** env-configurable via `ANALYSIS_MODEL`; default `claude-sonnet-4-6`  
+**Web search tool:** `web_search_20260209` (built-in dynamic filtering; supported on Sonnet 4.6)
 
 ---
 
 ### Analysis call
 
+Synchronous — no `asyncio`. The SDK reads `ANTHROPIC_API_KEY` from the environment.
+
 ```python
 import anthropic
 import re, json
 
-client = anthropic.AsyncAnthropic()
+client = anthropic.Anthropic()
 
-response = await client.messages.create(
-    model="claude-sonnet-4-20250514",
-    max_tokens=1000,
-    tools=[{"type": "web_search_20250305", "name": "web_search"}],
+response = client.messages.create(
+    model="claude-sonnet-4-6",
+    max_tokens=2000,
+    tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}],
     system=SYSTEM_PROMPT,
-    messages=[{"role": "user", "content": user_prompt}]
+    messages=[{"role": "user", "content": user_prompt}],
 )
 ```
+
+Note: with the `web_search` server tool, the response may contain `server_tool_use`
+and `web_search_tool_result` blocks before the final `text` block — always parse the
+**last** `text` block. If the server tool loop hits its iteration cap, `stop_reason`
+is `"pause_turn"`; re-send the user message + assistant response to continue.
 
 ---
 
@@ -194,24 +201,28 @@ result = json.loads(match.group(0))
 | 2 | 1000 | 80K |
 | 3 | 2000 | 160K |
 
-For batch analysis (scanner), use:
+For batch analysis (scanner), run **sequentially** with a delay between calls (no
+`asyncio`):
 ```python
-asyncio.Semaphore(5)     # max 5 concurrent analyses
-asyncio.sleep(1.5)       # delay between completions
+import time
+
+for market in markets:
+    analyze_market(market)
+    time.sleep(float(os.getenv("ANALYSIS_DELAY_SECONDS", "1.5")))
 ```
 
 This keeps you well within Tier 1 limits and avoids hammering the API.
 
-**Exponential backoff on 429:**
+**Exponential backoff on 429 (synchronous):**
 ```python
-import asyncio
+import time
 
-async def with_retry(coro, max_retries=3):
+def with_retry(fn, max_retries=3):
     for attempt in range(max_retries):
         try:
-            return await coro
+            return fn()
         except anthropic.RateLimitError:
             if attempt == max_retries - 1:
                 raise
-            await asyncio.sleep(2 ** attempt * 5)
+            time.sleep(2 ** attempt * 5)
 ```
