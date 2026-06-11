@@ -1,0 +1,13 @@
+# Local data (SQLite DB lives here) — keep the dir, ignore its contents
+data/*
+!data/.gitkeep
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtualenvs
+.venv/
