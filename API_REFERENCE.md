@@ -49,11 +49,15 @@ GET /markets?active=true&closed=false&limit=50&offset=0&order=volumeNum&ascendin
 
 **Critical normalization notes:**
 - `outcomePrices` is a **JSON string** — must be parsed: `json.loads(market["outcomePrices"])`
-- `outcomes` is also a JSON string — same treatment
+- `outcomes` and `clobTokenIds` are also JSON strings — same treatment
 - After parsing: `prices[0]` = YES probability (0–1 as string), `prices[1]` = NO probability
 - Multi-outcome markets: N prices summing to ~1.0; use `prices[0]` for the first/leading outcome
 - All prices come as strings — convert with `float()`
 - Volume fields are strings — convert with `float()`
+- **Date gotcha:** `endDate` occasionally arrives with a bare timezone offset (`+00` instead of
+  `+00:00`), which `datetime.fromisoformat()` rejects. Pad bare offsets before parsing and treat
+  unparseable values as `None` rather than letting the whole fetch crash. (See the borrowed
+  `_normalize_dt` validator in `polymarket.py`.)
 
 **Normalization function:**
 ```python
@@ -72,25 +76,27 @@ def normalize_market(raw: dict) -> Market:
     )
 ```
 
-**Pagination pattern:**
+**Pagination pattern** (synchronous — no `asyncio`; rate-limiting handled by the client's
+`time.sleep` per request):
 ```python
-async def fetch_all_active(max_markets: int = 500) -> list[Market]:
-    markets = []
+def fetch_all_active(max_markets: int = 500) -> list[Market]:
+    markets: list[Market] = []
     offset = 0
-    async with httpx.AsyncClient() as client:
+    limit = 50
+    with httpx.Client(base_url=BASE_URL, timeout=15.0) as client:
         while len(markets) < max_markets:
-            r = await client.get(
-                f"{BASE_URL}/markets",
-                params={"active": "true", "closed": "false", "limit": 50, "offset": offset, "order": "volumeNum", "ascending": "false"},
-                timeout=15.0
+            r = client.get(
+                "/markets",
+                params={"active": "true", "closed": "false", "limit": limit, "offset": offset, "order": "volumeNum", "ascending": "false"},
             )
             r.raise_for_status()
             batch = r.json()
             if not batch:
                 break
-            markets.extend([normalize_market(m) for m in batch])
-            offset += len(batch)
-            if len(batch) < 50:  # last page
+            # normalize_market returns None for ineligible rows (e.g. non-binary); drop those.
+            markets.extend(m for m in (normalize_market(raw) for raw in batch) if m is not None)
+            offset += len(batch)   # page by RAW count, not filtered count
+            if len(batch) < limit:  # last page
                 break
     return markets
 ```
