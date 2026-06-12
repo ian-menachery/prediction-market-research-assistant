@@ -101,6 +101,7 @@
     .ann { font-weight: 700; }
     .basis-exec { font-size: 11px; font-weight: 700; color: var(--green); background: var(--green-bg); padding: 2px 7px; border-radius: 6px; }
     .basis-mid  { font-size: 11px; color: var(--muted); background: var(--gray-bg); padding: 2px 7px; border-radius: 6px; }
+    .dim { color: var(--muted); font-size: 11px; cursor: help; }
     .stale-badge { font-size: 12px; color: var(--warn); background: var(--warn-bg);
       border: 1px solid #f2d699; padding: 5px 9px; border-radius: 7px; }
     .v-holds   { font-size: 11px; font-weight: 700; color: var(--green); background: var(--green-bg); padding: 2px 7px; border-radius: 6px; cursor: help; }
@@ -175,6 +176,7 @@
     const pct = (x) => (x == null ? "—" : Math.round(x * 100) + "%");
     const pct1 = (x) => (x == null ? "—" : (x * 100).toFixed(0) + "%");
     const money = (n) => (n == null ? "—" : "$" + Math.round(n).toLocaleString("en-US"));
+    const shares = (n) => (n == null ? "" : n >= 1000 ? Math.round(n / 1000) + "k" : String(Math.round(n)));
     const tradeUrl = (slug) => `https://polymarket.com/event/${slug}`;
 
     function timeToClose(iso) {
@@ -412,7 +414,7 @@
               <div className="empty">No markets cleared the gates. Loosen the filters and rescan.</div>
             ) : (
               <div>
-                <div className="meta-line">{results.length} ranked by annualized EV {cal && cal.calibrated ? "(calibrated)" : "(uncalibrated)"} · basis: <b>exec</b> = live bid/ask, <b>mid</b> = mid-price fallback
+                <div className="meta-line">{results.length} ranked by annualized EV {cal && cal.calibrated ? "(calibrated)" : "(uncalibrated)"} · basis: <b>exec</b> = live bid/ask, <b>mid</b> = mid-price fallback · Bid/Ask show price ·fillable shares at that level
                   {req.refute_top > 0 ? " · verdict = same-model skeptical refutation of the top " + req.refute_top : ""}</div>
                 <div className="table-wrap">
                   <table className="scan">
@@ -430,8 +432,10 @@
                           <tr key={m.id}>
                             <td>{r.side && <span className={"side " + r.side.toLowerCase()}>{r.side}</span>}</td>
                             <td>{pct(m.market_prob)}</td>
-                            <td>{pct(r.best_bid)}</td>
-                            <td>{pct(r.best_ask)}</td>
+                            <td>{pct(r.best_bid)}{r.bid_depth != null && r.best_bid != null &&
+                              <span className="dim" title={`${Math.round(r.bid_depth).toLocaleString()} shares · $${Math.round(r.bid_depth * r.best_bid).toLocaleString()}`}> ·{shares(r.bid_depth)}</span>}</td>
+                            <td>{pct(r.best_ask)}{r.ask_depth != null && r.best_ask != null &&
+                              <span className="dim" title={`${Math.round(r.ask_depth).toLocaleString()} shares · $${Math.round(r.ask_depth * r.best_ask).toLocaleString()}`}> ·{shares(r.ask_depth)}</span>}</td>
                             <td>{pct(a.claude_prob)}</td>
                             <td>{pct(r.calibrated_prob)}</td>
                             <td>{r.ev != null ? Math.round(r.ev * 100) + "pp" : "—"}</td>
