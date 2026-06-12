@@ -252,12 +252,35 @@ class BookTop(NamedTuple):
     ask_depth: float  # shares resting at best_ask
 
 
-def _best_level(levels: list, pick) -> tuple[float | None, float | None]:
-    """(best_price, depth) from {price,size} levels via ``pick`` (max bids / min asks).
+class Book(NamedTuple):
+    """Parsed CLOB book: full ladders (best-first) plus top-of-book convenience fields.
 
-    Depth = total shares across every level at the best price (summed, so duplicate
-    or unaggregated price levels are handled). Order-independent; a level with a bad
-    size contributes 0. Returns (None, None) if no usable price level.
+    ``bids`` are sorted by price descending and ``asks`` ascending, so both are
+    "best-first" for an order-book walk. Each level is ``(price, size_in_shares)``.
+    """
+
+    bids: list[tuple[float, float]]
+    asks: list[tuple[float, float]]
+    best_bid: float
+    best_ask: float
+    bid_depth: float  # shares resting at best_bid
+    ask_depth: float  # shares resting at best_ask
+
+
+class VwapFill(NamedTuple):
+    """Result of walking one side of the book for a target USD position."""
+
+    price: float  # volume-weighted average fill price (cost/shares)
+    shares: float  # shares filled
+    cost: float  # USD deployed (== target_usd unless the book ran dry)
+    fully_filled: bool  # False if the book was too thin to reach target_usd
+
+
+def _parse_levels(levels: list, reverse: bool) -> list[tuple[float, float]]:
+    """Parse {price,size} levels into sorted ``(price, size)`` pairs.
+
+    price must be in [0,1]; a bad/missing size contributes 0. ``reverse=True`` sorts
+    descending (bids → best-first), ``False`` ascending (asks → best-first).
     """
     parsed: list[tuple[float, float]] = []
     for lvl in levels or []:
@@ -272,6 +295,17 @@ def _best_level(levels: list, pick) -> tuple[float | None, float | None]:
         except (TypeError, ValueError):
             size = 0.0
         parsed.append((p, size))
+    parsed.sort(key=lambda ps: ps[0], reverse=reverse)
+    return parsed
+
+
+def _best_level(levels: list, pick) -> tuple[float | None, float | None]:
+    """(best_price, depth) from {price,size} levels via ``pick`` (max bids / min asks).
+
+    Depth = total shares across every level at the best price (summed, so duplicate
+    or unaggregated price levels are handled). Returns (None, None) if no usable level.
+    """
+    parsed = _parse_levels(levels, reverse=False)
     if not parsed:
         return None, None
     best = pick(p for p, _ in parsed)
@@ -279,13 +313,42 @@ def _best_level(levels: list, pick) -> tuple[float | None, float | None]:
     return best, depth
 
 
-def fetch_best_bid_ask(yes_token_id: str) -> BookTop | None:
-    """Top-of-book ``BookTop(best_bid, best_ask, bid_depth, ask_depth)`` or None.
+def vwap_fill(cost_levels: list[tuple[float, float]], target_usd: float) -> VwapFill | None:
+    """Walk best-first ``(cost_per_share, size)`` levels for a ``target_usd`` position.
 
-    Reads the order book from ``GET /book?token_id=…``. Best bid = highest bid
-    price, best ask = lowest ask price (order-independent); depths are the shares
-    resting at those prices. Returns None on HTTP/parse failure or a one-sided book
-    (missing a usable bid or ask) so the caller can fall back to the mid price.
+    Accumulates shares until cumulative cost reaches ``target_usd`` (partial-filling the
+    last level), returning the volume-weighted average cost. If the book runs dry first,
+    returns the partial VWAP with ``fully_filled=False``. Returns None when nothing is
+    fillable (no levels / zero shares) or ``target_usd <= 0``. Side-agnostic: the caller
+    supplies cost-per-share (ask price for YES; ``1 - bid`` for NO).
+    """
+    if target_usd <= 0:
+        return None
+    spent = 0.0
+    shares = 0.0
+    for price, size in cost_levels:
+        if price <= 0 or size <= 0:
+            continue
+        remaining = target_usd - spent
+        level_cost = price * size
+        if level_cost >= remaining:  # this level finishes the fill
+            shares += remaining / price
+            spent = target_usd
+            return VwapFill(spent / shares, shares, spent, True)
+        spent += level_cost
+        shares += size
+    if shares <= 0:
+        return None
+    return VwapFill(spent / shares, shares, spent, False)  # book too thin for target
+
+
+def fetch_book(yes_token_id: str) -> Book | None:
+    """Full parsed order book (``Book``) or None.
+
+    Reads ``GET /book?token_id=…``, parses every level (price in [0,1], bad size → 0),
+    sorts each side best-first, and derives top-of-book. Returns None on HTTP/parse
+    failure or a one-sided book (missing a usable bid or ask) so the caller can fall
+    back to the mid price.
     """
     try:
         with httpx.Client(base_url=CLOB_BASE_URL, timeout=15.0) as client:
@@ -295,11 +358,23 @@ def fetch_best_bid_ask(yes_token_id: str) -> BookTop | None:
     except (httpx.HTTPError, ValueError, TypeError):
         return None
 
-    best_bid, bid_depth = _best_level(body.get("bids"), max)
-    best_ask, ask_depth = _best_level(body.get("asks"), min)
-    if best_bid is None or best_ask is None:
+    bids = _parse_levels(body.get("bids"), reverse=True)   # best (highest) first
+    asks = _parse_levels(body.get("asks"), reverse=False)  # best (lowest) first
+    if not bids or not asks:
         return None
-    return BookTop(best_bid, best_ask, bid_depth, ask_depth)
+    best_bid = bids[0][0]
+    best_ask = asks[0][0]
+    bid_depth = sum(s for p, s in bids if p == best_bid)
+    ask_depth = sum(s for p, s in asks if p == best_ask)
+    return Book(bids, asks, best_bid, best_ask, bid_depth, ask_depth)
+
+
+def fetch_best_bid_ask(yes_token_id: str) -> BookTop | None:
+    """Top-of-book ``BookTop`` or None (thin wrapper over ``fetch_book``)."""
+    book = fetch_book(yes_token_id)
+    if book is None:
+        return None
+    return BookTop(book.best_bid, book.best_ask, book.bid_depth, book.ask_depth)
 
 
 def fetch_all_active(max_markets: int = 500) -> list[Market]:

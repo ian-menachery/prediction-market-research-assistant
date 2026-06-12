@@ -23,6 +23,7 @@ _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 _ALLOWED_ORIGINS = {"http://localhost:5173", "http://localhost:3000"}
 
 load_dotenv()
+analyzer.validate_openai_model()  # warn early on a typo'd OPENAI_MODEL (provider-gated)
 db.init_db()
 
 app = Flask(__name__)

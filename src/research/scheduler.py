@@ -24,6 +24,11 @@ from research.models import ScanRequest
 
 _log = logging.getLogger(__name__)
 _timer: threading.Timer | None = None
+_resolution_timer: threading.Timer | None = None
+# Serializes DB-writing runs so the scan timer's end-of-run sweep and the resolution
+# timer's sweep never write sqlite concurrently ("database is locked"). A long scan just
+# makes a due sweep wait — intended.
+_run_lock = threading.Lock()
 
 
 def _scan_log_path() -> Path:
@@ -46,19 +51,20 @@ def run_once() -> dict:
     """
     errors: list[str] = []
 
-    before = db.count_analyses()
-    edges_found = 0
-    try:
-        edges_found = len(scanner.scan(_build_request()))
-    except Exception as e:  # noqa: BLE001
-        errors.append(f"scan: {type(e).__name__}: {e}")
-    markets_scanned = max(0, db.count_analyses() - before)
+    with _run_lock:  # serialize DB-writing runs (vs. the resolution-sweep timer)
+        before = db.count_analyses()
+        edges_found = 0
+        try:
+            edges_found = len(scanner.scan(_build_request()))
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"scan: {type(e).__name__}: {e}")
+        markets_scanned = max(0, db.count_analyses() - before)
 
-    resolutions_captured = 0
-    try:
-        resolutions_captured = scanner.sweep_resolutions()
-    except Exception as e:  # noqa: BLE001
-        errors.append(f"sweep: {type(e).__name__}: {e}")
+        resolutions_captured = 0
+        try:
+            resolutions_captured = scanner.sweep_resolutions()
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"sweep: {type(e).__name__}: {e}")
 
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -80,6 +86,24 @@ def run_once() -> dict:
         markets_scanned, edges_found, resolutions_captured, len(errors),
     )
     return record
+
+
+def run_sweep_once() -> int:
+    """Run one resolution sweep (no scan), return the count. Never raises.
+
+    Cheap (Gamma only, no LLM spend) so it can run far more often than full scans.
+    Logs to the app logger only — it writes NO line to scan_log.jsonl, so the
+    scan-history aggregate keeps meaning "full scan runs."
+    """
+    resolutions_captured = 0
+    with _run_lock:  # don't write the DB while a scan/sweep is in flight
+        try:
+            resolutions_captured = scanner.sweep_resolutions()
+        except Exception as e:  # noqa: BLE001 — a failed sweep must not kill the scheduler
+            _log.warning("auto-resolution sweep failed: %s: %s", type(e).__name__, e)
+            return 0
+    _log.info("auto-resolution sweep: resolutions=%d", resolutions_captured)
+    return resolutions_captured
 
 
 def history(last_n: int = 10) -> dict:
@@ -116,11 +140,19 @@ def history(last_n: int = 10) -> dict:
     }
 
 
-def _interval_seconds() -> float:
+def _hours_env_seconds(var: str) -> float:
     try:
-        return float(os.getenv("SCAN_INTERVAL_HOURS") or 0) * 3600.0
+        return float(os.getenv(var) or 0) * 3600.0
     except ValueError:
         return 0.0
+
+
+def _interval_seconds() -> float:
+    return _hours_env_seconds("SCAN_INTERVAL_HOURS")
+
+
+def _resolution_interval_seconds() -> float:
+    return _hours_env_seconds("AUTO_RESOLUTION_INTERVAL_HOURS")
 
 
 def _tick() -> None:
@@ -131,6 +163,13 @@ def _tick() -> None:
         _arm(_interval_seconds())
 
 
+def _resolution_tick() -> None:
+    try:
+        run_sweep_once()
+    finally:
+        _arm_resolution(_resolution_interval_seconds())
+
+
 def _arm(interval_s: float) -> None:
     global _timer
     _timer = threading.Timer(interval_s, _tick)
@@ -138,11 +177,30 @@ def _arm(interval_s: float) -> None:
     _timer.start()
 
 
+def _arm_resolution(interval_s: float) -> None:
+    global _resolution_timer
+    _resolution_timer = threading.Timer(interval_s, _resolution_tick)
+    _resolution_timer.daemon = True
+    _resolution_timer.start()
+
+
 def start() -> None:
-    """Arm the recurring scan if SCAN_INTERVAL_HOURS > 0. Call once, from __main__."""
-    interval_s = _interval_seconds()
-    if interval_s <= 0:
-        _log.info("auto-scan scheduler disabled (set SCAN_INTERVAL_HOURS to enable)")
-        return
-    _arm(interval_s)
-    _log.info("auto-scan scheduler armed (every %.2fh)", interval_s / 3600.0)
+    """Arm the recurring timers. Call once, from __main__.
+
+    Two independent cadences: a full scan + sweep on SCAN_INTERVAL_HOURS, and a cheaper
+    resolution-only sweep on AUTO_RESOLUTION_INTERVAL_HOURS (so resolutions are captured
+    more often than the expensive scans). Either is off when its var is blank/0.
+    """
+    scan_s = _interval_seconds()
+    if scan_s > 0:
+        _arm(scan_s)
+        _log.info("auto-scan armed (every %.2fh)", scan_s / 3600.0)
+    else:
+        _log.info("auto-scan disabled (set SCAN_INTERVAL_HOURS to enable)")
+
+    res_s = _resolution_interval_seconds()
+    if res_s > 0:
+        _arm_resolution(res_s)
+        _log.info("auto-resolution sweep armed (every %.2fh)", res_s / 3600.0)
+    else:
+        _log.info("auto-resolution sweep disabled (set AUTO_RESOLUTION_INTERVAL_HOURS to enable)")

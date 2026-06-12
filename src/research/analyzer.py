@@ -33,6 +33,10 @@ _log = logging.getLogger(__name__)
 
 ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
 OPENAI_DEFAULT_MODEL = "gpt-5.5"
+# Curated allow-list of OpenAI models known to work with the Responses API web_search
+# tool. Best-effort and editable — extend as new models ship. Used for a startup warning
+# only (never blocks), so an omission costs at most a spurious warning.
+KNOWN_OPENAI_MODELS = frozenset({"gpt-5.5", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4o"})
 WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
 MAX_TOKENS = 2000
 OPENAI_MAX_OUTPUT_TOKENS = 3000
@@ -85,6 +89,23 @@ def current_model() -> str:
 
 def openai_exhausted() -> bool:
     return _openai_exhausted
+
+
+def validate_openai_model() -> None:
+    """Warn (once, at startup) if OPENAI_MODEL is unrecognized — only when it'd be used.
+
+    Provider-gated: silent unless LLM_PROVIDER=openai. Never raises; the goal is to
+    surface a likely typo before it becomes an opaque API error mid-scan.
+    """
+    if current_provider() != "openai":
+        return
+    model = _model_for_provider("openai")
+    if model not in KNOWN_OPENAI_MODELS:
+        _log.warning(
+            "OPENAI_MODEL %r is not a recognized model; known: %s. "
+            "The OpenAI Responses API may reject it.",
+            model, sorted(KNOWN_OPENAI_MODELS),
+        )
 
 
 def _cross_model_enabled() -> bool:

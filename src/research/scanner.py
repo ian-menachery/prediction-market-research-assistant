@@ -39,26 +39,28 @@ def _days_to_close(market: Market) -> float | None:
 
 
 def _ev_fields(
-    market: Market, prob: float, bid: float | None, ask: float | None, min_days: float
+    market: Market, prob: float, yes_cost: float | None, no_cost: float | None, min_days: float
 ) -> dict:
     """EV on the favorable side, priced at the executable book when available.
 
-    Side is the directional intent (calibrated ``prob`` vs the market mid). When a
-    two-sided book is supplied (``bid`` and ``ask``), the cost is what you'd fill at:
-    BUY YES at the ask, or bet NO at ``1 - bid`` (buying NO == selling YES at the
-    bid). Otherwise it falls back to the mid price and ``executable`` is False.
-    ``ev`` can be negative once the spread is included — that's surfaced, not dropped.
+    Side is the directional intent (calibrated ``prob`` vs the market mid). ``yes_cost``
+    and ``no_cost`` are the executable per-share costs already on the correct side — the
+    VWAP fill to deploy the target position (BUY YES at the ask VWAP; bet NO at the
+    ``1 - bid`` VWAP, since buying NO == selling YES into the bids). When both are
+    supplied the position is priced off the book; otherwise it falls back to the mid
+    price and ``executable`` is False. ``ev`` can be negative once depth is included —
+    that's surfaced, not dropped.
     """
     mp = market.market_prob
     dtc = _days_to_close(market)
     side = "YES" if prob > mp else "NO"
-    executable = bid is not None and ask is not None
+    executable = yes_cost is not None and no_cost is not None
 
     if side == "YES":
-        price_paid = ask if executable else mp
+        price_paid = yes_cost if executable else mp
         ev = prob - price_paid
     else:
-        price_paid = (1.0 - bid) if executable else (1.0 - mp)
+        price_paid = no_cost if executable else (1.0 - mp)
         ev = (1.0 - prob) - price_paid
 
     valid = price_paid is not None and 0.0 < price_paid < 1.0
@@ -67,7 +69,7 @@ def _ev_fields(
     annualized = ev_pct * 365.0 / dtc if (ev_pct is not None and dtc is not None and dtc >= min_days) else None
     return {"side": side, "ev": ev if valid else None, "ev_pct": ev_pct, "kelly": kelly,
             "annualized_ev": annualized, "days_to_close": dtc,
-            "best_bid": bid, "best_ask": ask, "price_paid": price_paid, "executable": executable}
+            "price_paid": price_paid, "executable": executable}
 
 
 def scan(req: ScanRequest) -> list[ScanResult]:
@@ -89,6 +91,7 @@ def scan(req: ScanRequest) -> list[ScanResult]:
 
     candidates = [m for m in markets if passes_pre(m)]
     delay = float(os.getenv("ANALYSIS_DELAY_SECONDS", "1.5"))
+    target = float(os.getenv("TARGET_POSITION_USD", "50"))  # VWAP fill sizes EV to this
     results: list[ScanResult] = []
 
     for m in candidates:
@@ -120,18 +123,35 @@ def scan(req: ScanRequest) -> list[ScanResult]:
         book = None
         if m.yes_token_id:
             try:
-                book = polymarket.fetch_best_bid_ask(m.yes_token_id)
+                book = polymarket.fetch_book(m.yes_token_id)
             except Exception:  # noqa: BLE001 — a CLOB hiccup shouldn't kill the scan
                 book = None
-        bid = ask = bid_depth = ask_depth = None
-        if book:
-            bid, ask, bid_depth, ask_depth = book  # BookTop(best_bid, best_ask, bid_depth, ask_depth)
 
-        ev = _ev_fields(m, calibrated_p, bid, ask, req.min_days_to_close)
+        best_bid = best_ask = bid_depth = ask_depth = None
+        yes_cost = no_cost = None
+        yes_fill = no_fill = None
+        if book:
+            best_bid, best_ask = book.best_bid, book.best_ask
+            bid_depth, ask_depth = book.bid_depth, book.ask_depth
+            # VWAP fill to deploy `target` USD: BUY YES into the asks; bet NO into the
+            # bids (NO cost per share = 1 - yes bid). Both ladders are best-first.
+            yes_fill = polymarket.vwap_fill([(p, s) for p, s in book.asks], target)
+            no_fill = polymarket.vwap_fill([(1.0 - p, s) for p, s in book.bids], target)
+            yes_cost = yes_fill.price if yes_fill else None
+            no_cost = no_fill.price if no_fill else None
+
+        ev = _ev_fields(m, calibrated_p, yes_cost, no_cost, req.min_days_to_close)
         if ev["annualized_ev"] is None:  # below the days floor (defensive; pre-filtered)
             continue
-        results.append(ScanResult(market=m, analysis=analysis, calibrated_prob=calibrated_p,
-                                  bid_depth=bid_depth, ask_depth=ask_depth, **ev))
+        chosen_fill = yes_fill if ev["side"] == "YES" else no_fill
+        results.append(ScanResult(
+            market=m, analysis=analysis, calibrated_prob=calibrated_p,
+            best_bid=best_bid, best_ask=best_ask, bid_depth=bid_depth, ask_depth=ask_depth,
+            fill_shares=chosen_fill.shares if chosen_fill else None,
+            fully_filled=chosen_fill.fully_filled if chosen_fill else False,
+            target_position_usd=target if ev["executable"] else None,
+            **ev,
+        ))
 
     results.sort(key=lambda r: r.annualized_ev or -1.0, reverse=True)
 

@@ -103,10 +103,12 @@ class Refutation(BaseModel):
 class ScanResult(BaseModel):
     """A market, its analysis, and the (uncalibrated) EV figures derived from them.
 
-    EV uses the market mid price and Claude's *uncalibrated* estimate, so it is
-    directional only until Phase 3 (calibration) and Phase 3.5 (executable
-    bid/ask) land. ``side`` is the favorable side to bet (YES if Claude is higher
-    than the market, NO if lower).
+    ``side`` is the favorable side to bet (YES if Claude is higher than the market, NO
+    if lower). When the live book is available, ``price_paid`` is the **volume-weighted
+    average fill** to deploy ``target_position_usd`` on that side (depth-aware), not the
+    top-of-book price — so a thin book yields a worse, truer cost; ``best_bid``/``best_ask``
+    remain the top-of-book reference. Falls back to the mid price (``executable=False``)
+    when no two-sided book is available.
     """
 
     market: Market
@@ -122,7 +124,10 @@ class ScanResult(BaseModel):
     bid_depth: float | None = None  # shares resting at best_bid
     best_ask: float | None = None  # CLOB best ask for the YES token (top of book)
     ask_depth: float | None = None  # shares resting at best_ask
-    price_paid: float | None = None  # cost per share on the chosen side (executable, else mid)
+    price_paid: float | None = None  # VWAP fill cost/share on the chosen side for target_position_usd (else mid)
+    fill_shares: float | None = None  # shares the VWAP walk filled toward the target
+    fully_filled: bool = False  # False if the book was too thin to reach target_position_usd
+    target_position_usd: float | None = None  # USD position the VWAP priced (None on mid fallback)
     executable: bool = False  # True if priced off the live book; False = mid-price fallback
     refutation: Refutation | None = None  # skeptical second pass (top edges only; None otherwise)
 
