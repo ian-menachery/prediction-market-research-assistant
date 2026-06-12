@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS analyses (
     created_at     TEXT    NOT NULL,
     model          TEXT,                -- which LLM produced the estimate (per-model calibration)
     claude_prob    REAL,
+    market_prob_at_analysis REAL,       -- market YES mid when the analysis ran (staleness)
     confidence     TEXT,
     edge           TEXT,
     edge_magnitude REAL,
@@ -65,8 +66,8 @@ _MARKET_COLUMNS = (
     "yes_token_id, end_date, tags, description, fetched_at"
 )
 _ANALYSIS_COLUMNS = (
-    "market_id, created_at, model, claude_prob, confidence, edge, edge_magnitude, "
-    "factors, summary, resolved, resolution, error"
+    "market_id, created_at, model, claude_prob, market_prob_at_analysis, "
+    "confidence, edge, edge_magnitude, factors, summary, resolved, resolution, error"
 )
 
 
@@ -126,6 +127,7 @@ def _analysis_to_row(a: Analysis) -> tuple:
         a.created_at.isoformat(),
         a.model,
         a.claude_prob,
+        a.market_prob_at_analysis,
         a.confidence,
         a.edge,
         a.edge_magnitude,
@@ -155,6 +157,8 @@ def init_db() -> None:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(analyses)").fetchall()}
         if "model" not in cols:
             conn.execute("ALTER TABLE analyses ADD COLUMN model TEXT")
+        if "market_prob_at_analysis" not in cols:
+            conn.execute("ALTER TABLE analyses ADD COLUMN market_prob_at_analysis REAL")
 
 
 # --- markets -------------------------------------------------------------------
@@ -184,7 +188,7 @@ def get_market(market_id: str) -> Market | None:
 
 def save_analysis(analysis: Analysis) -> int:
     """Append an analysis (always INSERT, never UPDATE). Returns the new row id."""
-    placeholders = ", ".join(["?"] * 12)
+    placeholders = ", ".join(["?"] * 13)
     with _conn() as conn:
         cur = conn.execute(
             f"INSERT INTO analyses ({_ANALYSIS_COLUMNS}) VALUES ({placeholders})",

@@ -172,6 +172,7 @@ def _parse_analysis(text: str, market: Market, model: str) -> Analysis:
         market_id=market.id,
         model=model,
         claude_prob=claude_prob,
+        market_prob_at_analysis=market.market_prob,
         confidence=confidence,
         edge=edge,
         edge_magnitude=magnitude,
