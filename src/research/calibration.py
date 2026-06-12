@@ -46,6 +46,11 @@ def _apply_temp(p: float, temperature: float) -> float:
     return _sigmoid(_logit(p) / temperature)
 
 
+def apply_temperature(p: float, temperature: float) -> float:
+    """Public: apply a fitted temperature to a probability (p_cal = sigmoid(logit(p)/T))."""
+    return _apply_temp(p, temperature)
+
+
 def log_loss(pairs: list[tuple[float, bool]]) -> float:
     if not pairs:
         return 0.0
