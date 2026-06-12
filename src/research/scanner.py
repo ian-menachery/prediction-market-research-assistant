@@ -20,6 +20,18 @@ from research import analyzer, calibration, db, polymarket
 from research.models import Market, ScanRequest, ScanResult
 
 
+REFUTE_BAND = 0.03  # refuter must still diverge from the market by this much for the edge to "hold"
+
+
+def _refute_verdict(side: str, market_prob: float | None, cal_refuter: float | None) -> str | None:
+    """holds if the (recalibrated) refuter still backs the original side past REFUTE_BAND."""
+    if market_prob is None or cal_refuter is None or side is None:
+        return None
+    if side == "YES":
+        return "holds" if cal_refuter > market_prob + REFUTE_BAND else "refuted"
+    return "holds" if cal_refuter < market_prob - REFUTE_BAND else "refuted"
+
+
 def _days_to_close(market: Market) -> float | None:
     if market.end_date is None:
         return None
@@ -119,4 +131,13 @@ def scan(req: ScanRequest) -> list[ScanResult]:
         results.append(ScanResult(market=m, analysis=analysis, calibrated_prob=calibrated_p, **ev))
 
     results.sort(key=lambda r: r.annualized_ev or -1.0, reverse=True)
+
+    # Adversarial second pass over the top-ranked edges (most worth scrutinizing).
+    for r in results[: req.refute_top]:
+        ref = analyzer.refute_edge(r.market, r.calibrated_prob)
+        time.sleep(delay)
+        if ref.error is None and ref.refuter_prob is not None:
+            recal = recals.get(r.analysis.model) or calibration.identity_recalibrator(r.analysis.model)
+            ref.verdict = _refute_verdict(r.side, r.market.market_prob, recal.apply(ref.refuter_prob))
+        r.refutation = ref  # flag-only; edges are not dropped
     return results

@@ -121,6 +121,7 @@ class ScanResult(BaseModel):
     best_ask: float | None = None  # CLOB best ask for the YES token (top of book)
     price_paid: float | None = None  # cost per share on the chosen side (executable, else mid)
     executable: bool = False  # True if priced off the live book; False = mid-price fallback
+    refutation: Refutation | None = None  # skeptical second pass (top edges only; None otherwise)
 
 
 class CalibrationBin(BaseModel):
@@ -156,3 +157,4 @@ class ScanRequest(BaseModel):
     max_markets: int = 100
     min_liquidity: float = 0.0
     min_days_to_close: float = 7.0  # below this, annualized EV is noise — exclude
+    refute_top: int = 0  # adversarially refute the top-N ranked edges (0 = off; bounds cost)
