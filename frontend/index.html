@@ -170,6 +170,11 @@
         if (!r.ok) throw new Error("Failed to load provider");
         return r.json();
       },
+      async getScanHistory() {
+        const r = await fetch("/api/scan-history");
+        if (!r.ok) throw new Error("Failed to load scan history");
+        return r.json();
+      },
     };
 
     // --- formatting helpers ---
@@ -527,16 +532,64 @@
       );
     }
 
+    function runTime(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      if (isNaN(d)) return "—";
+      const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const time = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+      return `${date} ${time}`;
+    }
+
+    function ScanHistoryBlock({ hist }) {
+      if (!hist) return null;
+      return (
+        <div className="cal-section">
+          <div className="cal-head">
+            <span className="cal-model">Auto-scan history</span>
+            <span className="kv">runs <b>{hist.total_runs}</b></span>
+            <span className="kv">avg edges/run <b>{hist.avg_edges_per_run}</b></span>
+            <span className="kv">avg markets scanned <b>{hist.avg_markets_scanned}</b></span>
+            <span className="kv">resolutions captured <b>{hist.total_resolutions_captured}</b></span>
+          </div>
+          {hist.total_runs === 0 ? (
+            <div className="cal-note">No auto-scan runs yet — set <code>SCAN_INTERVAL_HOURS</code> to enable.</div>
+          ) : (
+            <div className="table-wrap">
+              <table className="scan">
+                <thead><tr><th>Time</th><th>Scanned</th><th>Edges</th><th>Resolutions</th><th>Errors</th></tr></thead>
+                <tbody>
+                  {hist.last_runs.map((r, i) => (
+                    <tr key={i}>
+                      <td>{runTime(r.timestamp)}</td>
+                      <td>{r.markets_scanned ?? 0}</td>
+                      <td>{r.edges_found ?? 0}</td>
+                      <td>{r.resolutions_captured ?? 0}</td>
+                      <td>{r.errors && r.errors.length ? `⚠ ${r.errors.length}` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     function CalibrationView() {
       const [reports, setReports] = useState(null);
+      const [hist, setHist] = useState(null);
       const [err, setErr] = useState(null);
       useEffect(() => { API.getCalibration().then(setReports).catch((e) => setErr(e.message)); }, []);
+      // History is best-effort — a failure here must never break the calibration view.
+      useEffect(() => { API.getScanHistory().then(setHist).catch(() => {}); }, []);
 
       if (err) return <main><div className="err">{err}</div></main>;
       if (!reports) return <main><div className="empty">Loading…</div></main>;
 
       return (
         <main>
+          <ScanHistoryBlock hist={hist} />
           <div className="cal-note">
             Each model is calibrated separately — mixing models would corrupt the curve.{" "}
             <a href="/api/calibration/export.csv">Export resolved pairs (CSV) ↗</a>
