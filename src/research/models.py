@@ -82,17 +82,31 @@ class MarketWithAnalysis(BaseModel):
 
 
 class ScanResult(BaseModel):
-    """One market and the analysis produced for it during a scan."""
+    """A market, its analysis, and the (uncalibrated) EV figures derived from them.
+
+    EV uses the market mid price and Claude's *uncalibrated* estimate, so it is
+    directional only until Phase 3 (calibration) and Phase 3.5 (executable
+    bid/ask) land. ``side`` is the favorable side to bet (YES if Claude is higher
+    than the market, NO if lower).
+    """
 
     market: Market
     analysis: Analysis
+    side: Literal["YES", "NO"] | None = None
+    ev: float | None = None  # per-share edge on the favorable side = |claude - market|
+    ev_pct: float | None = None  # ev / price_paid
+    kelly: float | None = None  # full Kelly fraction = ev / (1 - price_paid); size with a fraction
+    annualized_ev: float | None = None  # ev_pct * 365 / days_to_close (None below the days floor)
+    days_to_close: float | None = None
 
 
 class ScanRequest(BaseModel):
-    """Parameters controlling a batch divergence scan."""
+    """Parameters controlling a batch EV scan."""
 
     min_volume_24h: float = 10_000
     max_age_hours: float = 24.0
     min_divergence: float = 0.05
     category: str | None = None
     max_markets: int = 100
+    min_liquidity: float = 0.0
+    min_days_to_close: float = 7.0  # below this, annualized EV is noise — exclude

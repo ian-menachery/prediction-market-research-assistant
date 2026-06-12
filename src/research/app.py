@@ -12,9 +12,10 @@ from typing import Any
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory
+from pydantic import ValidationError
 
-from research import analyzer, db, polymarket
-from research.models import Analysis, Market, MarketWithAnalysis
+from research import analyzer, db, polymarket, scanner
+from research.models import Analysis, Market, MarketWithAnalysis, ScanRequest
 
 _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 _ALLOWED_ORIGINS = {"http://localhost:5173", "http://localhost:3000"}
@@ -141,6 +142,17 @@ def refresh() -> Any:
     db.upsert_markets(markets)
     resolved = _sweep_resolutions()
     return jsonify({"count": len(markets), "resolved": resolved})
+
+
+@app.post("/api/scan")
+def scan() -> Any:
+    body = request.get_json(silent=True) or {}
+    try:
+        req = ScanRequest(**body)
+    except ValidationError as e:
+        return jsonify({"error": e.errors()}), 400
+    results = scanner.scan(req)
+    return jsonify([r.model_dump(mode="json") for r in results])
 
 
 @app.put("/api/markets/<market_id>/resolution")
