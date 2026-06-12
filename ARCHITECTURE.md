@@ -139,7 +139,29 @@ for market in markets:
     ...
 ```
 
-Return: list of `ScanResult` sorted by `edge_magnitude` descending.
+Return: list of `ScanResult` sorted by annualized EV descending. EV is computed from
+the **calibrated** probability (see `calibration.py`) and the market mid price; the
+`min_divergence` gate applies to the calibrated divergence.
+
+---
+
+### `calibration.py` — Recalibration + metrics (math only)
+Pure math, no SQL/HTTP. Reads resolved `(claude_prob, resolution)` pairs via `db`,
+writes nothing. Recalibration is **temperature scaling** (one parameter `T`):
+`p_cal = sigmoid(logit(p) / T)`, with `T` fit by minimizing log-loss. Applied only
+once `CALIBRATION_MIN_N` (default 50) markets have resolved; below that, identity.
+
+```python
+def fit_temperature(pairs: list[tuple[float, bool]]) -> float
+def brier_score(pairs) -> float
+def log_loss(pairs) -> float
+def calibration_curve(pairs, bins=10) -> list[dict]
+def build_recalibrator() -> Recalibrator   # .apply(p), .calibrated, .n, .temperature, metrics
+```
+
+The scanner builds one `Recalibrator` per scan and applies `.apply()` to each
+market's `claude_prob` before the EV calc. Raw `claude_prob` stays immutable (it is
+the calibration source).
 
 ---
 

@@ -277,3 +277,20 @@ def get_unresolved_analyzed_market_ids() -> list[str]:
             "SELECT DISTINCT market_id FROM analyses WHERE resolved IS NULL"
         ).fetchall()
     return [r["market_id"] for r in rows]
+
+
+def get_resolved_pairs() -> list[tuple[float, bool]]:
+    """(claude_prob, outcome) pairs for resolved analyses — the calibration dataset."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT claude_prob, resolution FROM analyses "
+            "WHERE resolved = 1 AND resolution IS NOT NULL AND claude_prob IS NOT NULL"
+        ).fetchall()
+    return [(float(r["claude_prob"]), bool(r["resolution"])) for r in rows]
+
+
+def get_all_resolved_analyses() -> list[Analysis]:
+    """All resolved analyses (for CSV export to the calibration tracker)."""
+    with _conn() as conn:
+        rows = conn.execute("SELECT * FROM analyses WHERE resolved = 1 ORDER BY id").fetchall()
+    return [_row_to_analysis(r) for r in rows]

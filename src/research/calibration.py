@@ -1,0 +1,140 @@
+"""Calibration: measure how miscalibrated Claude is, and correct for it.
+
+Pure math (stdlib only) — reads resolved ``(claude_prob, resolution)`` pairs via
+``db`` and never writes. Recalibration is **temperature scaling** (one parameter
+``T``): ``p_cal = sigmoid(logit(p) / T)``. ``T > 1`` softens overconfidence (pulls
+estimates toward 0.5); ``T < 1`` sharpens. ``T`` is fit by minimizing log-loss over
+resolved pairs.
+
+The correction is applied only once at least ``CALIBRATION_MIN_N`` markets have
+resolved; below that the recalibrator is the identity and reports ``calibrated=False``.
+Temperature scaling corrects *confidence* miscalibration, not a *directional* bias
+(that would need a second/Platt parameter) — an upgrade noted for later.
+"""
+
+from __future__ import annotations
+
+import math
+import os
+from dataclasses import dataclass
+
+from research import db
+
+_EPS = 1e-6
+MIN_N = int(os.getenv("CALIBRATION_MIN_N", "50"))
+_BINS = 10
+
+
+def _clamp(p: float) -> float:
+    return min(1.0 - _EPS, max(_EPS, p))
+
+
+def _sigmoid(x: float) -> float:
+    # Numerically stable both directions.
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    z = math.exp(x)
+    return z / (1.0 + z)
+
+
+def _logit(p: float) -> float:
+    p = _clamp(p)
+    return math.log(p / (1.0 - p))
+
+
+def _apply_temp(p: float, temperature: float) -> float:
+    return _sigmoid(_logit(p) / temperature)
+
+
+def log_loss(pairs: list[tuple[float, bool]]) -> float:
+    if not pairs:
+        return 0.0
+    total = 0.0
+    for p, y in pairs:
+        p = _clamp(p)
+        total += -(math.log(p) if y else math.log(1.0 - p))
+    return total / len(pairs)
+
+
+def brier_score(pairs: list[tuple[float, bool]]) -> float:
+    if not pairs:
+        return 0.0
+    return sum((p - (1.0 if y else 0.0)) ** 2 for p, y in pairs) / len(pairs)
+
+
+def fit_temperature(pairs: list[tuple[float, bool]]) -> float:
+    """Temperature minimizing log-loss over T in [0.05, 20], via ternary search."""
+    if not pairs:
+        return 1.0
+
+    def loss(t: float) -> float:
+        return log_loss([(_apply_temp(p, t), y) for p, y in pairs])
+
+    lo, hi = 0.05, 20.0
+    for _ in range(100):
+        if hi - lo < 1e-4:
+            break
+        m1 = lo + (hi - lo) / 3.0
+        m2 = hi - (hi - lo) / 3.0
+        if loss(m1) < loss(m2):
+            hi = m2
+        else:
+            lo = m1
+    return (lo + hi) / 2.0
+
+
+def calibration_curve(pairs: list[tuple[float, bool]], bins: int = _BINS) -> list[dict]:
+    """Reliability bins: predicted mean vs empirical resolve-rate per probability bin."""
+    out: list[dict] = []
+    for i in range(bins):
+        lo, hi = i / bins, (i + 1) / bins
+        # Last bin is inclusive of 1.0; others are [lo, hi).
+        sel = [
+            (p, y) for p, y in pairs
+            if p >= lo and (p < hi or (i == bins - 1 and p <= hi))
+        ]
+        if sel:
+            predicted_mean: float | None = sum(p for p, _ in sel) / len(sel)
+            empirical_rate: float | None = sum(1 for _, y in sel if y) / len(sel)
+        else:
+            predicted_mean = empirical_rate = None
+        out.append({
+            "bin_lo": lo, "bin_hi": hi,
+            "predicted_mean": predicted_mean, "empirical_rate": empirical_rate,
+            "count": len(sel),
+        })
+    return out
+
+
+@dataclass(frozen=True)
+class Recalibrator:
+    n: int
+    calibrated: bool
+    temperature: float
+    min_n: int
+    brier: float
+    log_loss: float
+    curve: list[dict]
+
+    def apply(self, p: float) -> float:
+        """Calibrated probability, or the raw value if not yet calibrated."""
+        if not self.calibrated:
+            return p
+        return _apply_temp(p, self.temperature)
+
+
+def build_recalibrator() -> Recalibrator:
+    """Fit (or identity) from the current resolved set. Build once, apply per market."""
+    pairs = db.get_resolved_pairs()
+    n = len(pairs)
+    calibrated = n >= MIN_N
+    temperature = fit_temperature(pairs) if calibrated else 1.0
+    return Recalibrator(
+        n=n,
+        calibrated=calibrated,
+        temperature=temperature,
+        min_n=MIN_N,
+        brier=brier_score(pairs),
+        log_loss=log_loss(pairs),
+        curve=calibration_curve(pairs),
+    )
