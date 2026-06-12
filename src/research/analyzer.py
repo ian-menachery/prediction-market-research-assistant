@@ -71,15 +71,47 @@ def current_provider() -> str:
     return os.getenv("LLM_PROVIDER", "anthropic").strip().lower()
 
 
-def current_model() -> str:
-    _ensure_env()
-    if current_provider() == "openai":
+def _model_for_provider(provider: str) -> str:
+    """The configured model name for a provider (mirrors the per-provider env defaults)."""
+    if provider == "openai":
         return os.getenv("OPENAI_MODEL", OPENAI_DEFAULT_MODEL)
     return os.getenv("ANALYSIS_MODEL", ANTHROPIC_DEFAULT_MODEL)
 
 
+def current_model() -> str:
+    _ensure_env()
+    return _model_for_provider(current_provider())
+
+
 def openai_exhausted() -> bool:
     return _openai_exhausted
+
+
+def _cross_model_enabled() -> bool:
+    """Cross-model adversarial refutation: the skeptic uses the opposite provider."""
+    _ensure_env()
+    return os.getenv("CROSS_MODEL_ADVERSARIAL", "").strip().lower() == "true"
+
+
+def _provider_for_model(model: str | None) -> str:
+    """Infer the provider that produced a model. The analysis's stored model is
+    authoritative (even for DB-cached analyses from a past provider); ``None`` ->
+    the currently-configured provider."""
+    if model and model.lower().startswith("claude"):
+        return "anthropic"
+    if model:
+        return "openai"
+    return current_provider()
+
+
+def _opposite_provider(provider: str) -> str:
+    return "anthropic" if provider == "openai" else "openai"
+
+
+def _provider_key_configured(provider: str) -> bool:
+    _ensure_env()
+    env_var = "OPENAI_API_KEY" if provider == "openai" else "ANTHROPIC_API_KEY"
+    return bool(os.getenv(env_var))
 
 
 def _get_client() -> anthropic.Anthropic:
@@ -235,9 +267,13 @@ def _openai_complete(system: str, user: str) -> str:
     ).output_text
 
 
-def _complete(system: str, user: str) -> str:
-    """One LLM completion via the configured provider, with web search. May raise."""
-    if current_provider() == "openai":
+def _complete(system: str, user: str, provider: str | None = None) -> str:
+    """One LLM completion with web search. ``provider`` defaults to the configured one;
+    pass it explicitly to target a specific provider (used by cross-model refutation).
+    May raise. The sub-functions pick their own model from env per provider."""
+    if provider is None:
+        provider = current_provider()
+    if provider == "openai":
         return _openai_complete(system, user)
     return _anthropic_complete(system, user)
 
@@ -293,20 +329,47 @@ def _refute_prompt(market: Market, claimed_prob: float) -> str:
     )
 
 
-def refute_edge(market: Market, claimed_prob: float) -> Refutation:
+def _refuter_target(original_model: str | None) -> tuple[str | None, str]:
+    """Pick the (provider, model) for the skeptic.
+
+    Default: the configured provider (same-model refutation). When
+    ``CROSS_MODEL_ADVERSARIAL=true``, use the OPPOSITE provider from the analysis so the
+    skeptic doesn't share its blind spots — but only if that provider's key is configured;
+    otherwise fall back to same-model with a warning. Returns ``provider`` as ``None`` to
+    mean "use the configured provider" (so default behavior is byte-for-byte unchanged)."""
+    if not _cross_model_enabled():
+        return None, current_model()
+    orig = _provider_for_model(original_model)
+    opp = _opposite_provider(orig)
+    if _provider_key_configured(opp):
+        return opp, _model_for_provider(opp)
+    _log.warning(
+        "cross-model adversarial: %s key not configured; falling back to same-model %s",
+        opp, orig,
+    )
+    return orig, _model_for_provider(orig)
+
+
+def refute_edge(market: Market, claimed_prob: float, original_model: str | None = None) -> Refutation:
     """Skeptical second pass that tries to break an edge. Never raises.
 
     Returns the refuter's own probability + counterpoints + resolution-risk flag; the
     holds/refuted verdict is derived by the caller (scanner) from refuter_prob vs the market.
+    With CROSS_MODEL_ADVERSARIAL=true the skeptic runs on the provider opposite to
+    ``original_model`` (the analysis's model). ``refuter_model`` records which model ran.
     """
+    provider, model = _refuter_target(original_model)
     try:
-        result = _extract_json(_complete(REFUTE_SYSTEM_PROMPT, _refute_prompt(market, claimed_prob)))
+        result = _extract_json(
+            _complete(REFUTE_SYSTEM_PROMPT, _refute_prompt(market, claimed_prob), provider=provider)
+        )
         cps = [str(c) for c in (result.get("counterpoints") or [])][:4]
         return Refutation(
             refuter_prob=_normalize_prob(result),
             resolution_risk=bool(result.get("resolution_risk")),
             counterpoints=cps,
             summary=str(result.get("summary") or ""),
+            refuter_model=model,
         )
     except Exception as e:  # noqa: BLE001 — a failed refutation shouldn't kill the scan
-        return Refutation(error=_provider_error(e))
+        return Refutation(error=_provider_error(e), refuter_model=model)

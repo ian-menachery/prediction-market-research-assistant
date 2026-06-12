@@ -137,7 +137,7 @@ def scan(req: ScanRequest) -> list[ScanResult]:
 
     # Adversarial second pass over the top-ranked edges (most worth scrutinizing).
     for r in results[: req.refute_top]:
-        ref = analyzer.refute_edge(r.market, r.calibrated_prob)
+        ref = analyzer.refute_edge(r.market, r.calibrated_prob, original_model=r.analysis.model)
         time.sleep(delay)
         if ref.error is None and ref.refuter_prob is not None:
             recal = recals.get(r.analysis.model) or calibration.identity_recalibrator(r.analysis.model)

@@ -92,6 +92,7 @@ class Refutation(BaseModel):
     """
 
     refuter_prob: float | None = None  # the skeptic's own YES estimate (0-1), uncalibrated
+    refuter_model: str | None = None  # which model ran the refutation (may differ when cross-model)
     verdict: Literal["holds", "refuted"] | None = None
     resolution_risk: bool = False
     counterpoints: list[str] = Field(default_factory=list)
