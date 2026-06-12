@@ -246,3 +246,34 @@ def get_analysis_age_hours(market_id: str) -> float | None:
         return None
     created = datetime.fromisoformat(row["created_at"])
     return (datetime.now(timezone.utc) - created).total_seconds() / 3600.0
+
+
+# --- resolution (calibration) --------------------------------------------------
+
+
+def mark_resolution(market_id: str, outcome: bool) -> int:
+    """Mark every analysis for a market resolved with the given outcome.
+
+    The one sanctioned UPDATE to existing analysis rows — it sets resolution
+    metadata only, never the ``claude_prob`` estimate (which stays immutable).
+    Returns the number of rows updated.
+    """
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE analyses SET resolved = 1, resolution = ? WHERE market_id = ?",
+            (1 if outcome else 0, market_id),
+        )
+        return cur.rowcount
+
+
+def get_unresolved_analyzed_market_ids() -> list[str]:
+    """Market ids with at least one analysis not yet marked resolved.
+
+    Drives the refresh-time resolution sweep — we only need to chase resolutions
+    for markets we actually analyzed (those carry the calibration data points).
+    """
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT market_id FROM analyses WHERE resolved IS NULL"
+        ).fetchall()
+    return [r["market_id"] for r in rows]

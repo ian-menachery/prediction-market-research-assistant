@@ -114,6 +114,23 @@ def analyze(market_id: str) -> Any:
     return jsonify(saved.model_dump(mode="json"))
 
 
+def _sweep_resolutions() -> int:
+    """Record resolutions for analyzed-but-unresolved markets. One Gamma call per
+    market — fine at MVP scale. Resolutions are lost once a market drops out of the
+    active fetch, so this runs on every refresh to capture them while they're live.
+    """
+    resolved = 0
+    for market_id in db.get_unresolved_analyzed_market_ids():
+        try:
+            outcome = polymarket.fetch_resolution(market_id)
+        except Exception:  # noqa: BLE001 — transient; next refresh retries
+            continue
+        if outcome is not None:
+            db.mark_resolution(market_id, outcome)
+            resolved += 1
+    return resolved
+
+
 @app.post("/api/markets/refresh")
 def refresh() -> Any:
     max_markets = int(os.getenv("MAX_SCAN_MARKETS", "100"))
@@ -122,7 +139,20 @@ def refresh() -> Any:
     except Exception as e:  # noqa: BLE001 — surface upstream failures as JSON, not a 500 page
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 502
     db.upsert_markets(markets)
-    return jsonify({"count": len(markets)})
+    resolved = _sweep_resolutions()
+    return jsonify({"count": len(markets), "resolved": resolved})
+
+
+@app.put("/api/markets/<market_id>/resolution")
+def set_resolution(market_id: str) -> Any:
+    if db.get_market(market_id) is None:
+        return jsonify({"error": "market not found"}), 404
+    body = request.get_json(silent=True) or {}
+    outcome = body.get("outcome")
+    if not isinstance(outcome, bool):
+        return jsonify({"error": 'body must be {"outcome": true|false}'}), 400
+    rows = db.mark_resolution(market_id, outcome)
+    return jsonify({"market_id": market_id, "resolution": outcome, "rows_updated": rows})
 
 
 if __name__ == "__main__":

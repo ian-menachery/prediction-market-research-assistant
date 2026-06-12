@@ -203,6 +203,45 @@ def fetch_markets(
     return [m for m in (normalize_market(raw) for raw in raw_page) if m is not None]
 
 
+def _detect_resolution(raw: dict) -> bool | None:
+    """YES/NO winner for a *resolved* market, else None (see CALIBRATION_NOTES.md).
+
+    A market is resolved when ``closed`` is true and one outcome's price has gone
+    to ~1. Returns True if YES won, False if NO won, None if unresolved/disputed.
+    """
+    if not raw.get("closed"):
+        return None
+    try:
+        prices = json.loads(raw.get("outcomePrices") or "[]")
+        outcomes = json.loads(raw.get("outcomes") or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return None
+    for i, price in enumerate(prices):
+        try:
+            if float(price) >= 0.99:
+                label = outcomes[i] if i < len(outcomes) else ""
+                return str(label).lower() in ("yes", "1", "true")
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def fetch_resolution(market_id: str) -> bool | None:
+    """Look up a market by id (including closed) and return its YES/NO resolution.
+
+    None if unresolved, disputed, or not found — the caller retries on the next
+    refresh. Matches by id in the returned page so a server-side ignored filter
+    degrades to a safe no-op rather than a wrong answer.
+    """
+    with GammaClient() as client:
+        page = client.get("/markets", id=market_id)
+    raws = page if isinstance(page, list) else [page] if page else []
+    raw = next((m for m in raws if str(m.get("id")) == str(market_id)), None)
+    if raw is None:
+        return None
+    return _detect_resolution(raw)
+
+
 def fetch_all_active(max_markets: int = 500) -> list[Market]:
     """Paginate active markets until ``max_markets`` eligible ones or the last page.
 
