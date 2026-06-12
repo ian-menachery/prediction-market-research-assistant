@@ -139,6 +139,10 @@ def scan() -> Any:
     except ValidationError as e:
         return jsonify({"error": e.errors()}), 400
     results = scanner.scan(req)
+    # Manual scans don't log by default (so UI param-tuning doesn't flood the signal
+    # log); opt in with {"log_signals": true}.
+    if body.get("log_signals"):
+        scanner.persist_signals(results)
     return jsonify([r.model_dump(mode="json") for r in results])
 
 
@@ -159,6 +163,19 @@ def calibration_report() -> Any:
 @app.get("/api/scan-history")
 def scan_history() -> Any:
     return jsonify(scheduler.history())
+
+
+@app.get("/api/signals")
+def signals() -> Any:
+    return jsonify({
+        "summary": db.signal_summary(),
+        "signals": [s.model_dump(mode="json") for s in db.get_signals()],
+    })
+
+
+@app.get("/api/alerts")
+def alerts() -> Any:
+    return jsonify(scanner.read_alerts())
 
 
 @app.get("/api/provider")
