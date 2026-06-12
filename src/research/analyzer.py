@@ -1,31 +1,41 @@
-"""Claude analysis engine. The only module that calls the Anthropic API.
+"""LLM analysis engine. The only module that calls an LLM provider.
 
-Takes a normalized ``Market`` and asks Claude — with web search — to estimate the
-YES probability, then returns an ``Analysis`` comparing Claude's estimate to the
-live market price. The ``edge`` label is derived deterministically here from the
-two probabilities (3pp rule), not taken from Claude's self-report.
+Takes a normalized ``Market`` and asks an LLM — with web search — to estimate the
+YES probability, then returns an ``Analysis`` comparing the estimate to the live
+market price. ``LLM_PROVIDER`` selects the provider: ``anthropic`` (default, Claude)
+or ``openai``. Each ``Analysis`` records which ``model`` produced it so calibration
+stays per-model. The ``edge`` label is derived deterministically here (3pp rule),
+not taken from the model's self-report.
 
-This function never raises: on any failure it returns an ``Analysis`` carrying
-only ``market_id`` + ``error``, because the batch scanner depends on graceful
-degradation.
+``analyze_market`` never raises: on any failure it returns an ``Analysis`` carrying
+``market_id`` + ``model`` + ``error``, because the batch scanner depends on graceful
+degradation. When OpenAI credits run out (``insufficient_quota``) it latches a flag
+(surfaced via ``openai_exhausted()``) and returns an explicit error telling the user
+to set ``LLM_PROVIDER=anthropic`` — it does NOT silently fall back to Claude.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
 from typing import Any, get_args
 
 import anthropic
+import openai
 from dotenv import load_dotenv
 
 from research.models import Analysis, Confidence, Edge, Market
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
+_log = logging.getLogger(__name__)
+
+ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
+OPENAI_DEFAULT_MODEL = "gpt-5.5"
 WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
 MAX_TOKENS = 2000
+OPENAI_MAX_OUTPUT_TOKENS = 3000
 FAIR_BAND = 0.03  # within 3 percentage points (0-1 space) counts as "fair"
 _MAX_RETRIES = 3
 _MAX_PAUSE_CONTINUATIONS = 3
@@ -43,16 +53,49 @@ SYSTEM_PROMPT = (
     "or fair (within 3pp). confidence = quality of information you found."
 )
 
-_client: anthropic.Anthropic | None = None
+_dotenv_loaded = False
+_anthropic_client: anthropic.Anthropic | None = None
+_openai_client: openai.OpenAI | None = None
+_openai_exhausted = False  # latched True once OpenAI returns insufficient_quota
+
+
+def _ensure_env() -> None:
+    global _dotenv_loaded
+    if not _dotenv_loaded:
+        load_dotenv()
+        _dotenv_loaded = True
+
+
+def current_provider() -> str:
+    return os.getenv("LLM_PROVIDER", "anthropic").strip().lower()
+
+
+def current_model() -> str:
+    if current_provider() == "openai":
+        return os.getenv("OPENAI_MODEL", OPENAI_DEFAULT_MODEL)
+    return os.getenv("ANALYSIS_MODEL", ANTHROPIC_DEFAULT_MODEL)
+
+
+def openai_exhausted() -> bool:
+    return _openai_exhausted
 
 
 def _get_client() -> anthropic.Anthropic:
-    """Lazy singleton. Loads .env once; SDK reads ANTHROPIC_API_KEY from env."""
-    global _client
-    if _client is None:
-        load_dotenv()
-        _client = anthropic.Anthropic()
-    return _client
+    """Lazy Anthropic singleton; SDK reads ANTHROPIC_API_KEY from env."""
+    global _anthropic_client
+    _ensure_env()
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.Anthropic()
+    return _anthropic_client
+
+
+def _get_openai_client() -> openai.OpenAI:
+    """Lazy OpenAI singleton; SDK reads OPENAI_API_KEY from env."""
+    global _openai_client
+    _ensure_env()
+    if _openai_client is None:
+        _openai_client = openai.OpenAI()
+    return _openai_client
 
 
 def _user_prompt(market: Market) -> str:
@@ -110,8 +153,11 @@ def _derive_edge(
     return edge, magnitude
 
 
-def _parse_analysis(text: str, market: Market) -> Analysis:
-    """Turn Claude's final text block into an Analysis. Pure + testable."""
+def _parse_analysis(text: str, market: Market, model: str) -> Analysis:
+    """Turn a model's text output into an Analysis. Pure + testable.
+
+    ``model`` is stamped on the result so calibration can stay per-model.
+    """
     result = _extract_json(text)
     claude_prob = _normalize_prob(result)
     edge, magnitude = _derive_edge(claude_prob, market.market_prob)
@@ -124,6 +170,7 @@ def _parse_analysis(text: str, market: Market) -> Analysis:
 
     return Analysis(
         market_id=market.id,
+        model=model,
         claude_prob=claude_prob,
         confidence=confidence,
         edge=edge,
@@ -143,7 +190,7 @@ def _last_text(response: Any) -> str:
 
 def _create_message(messages: list[dict]) -> Any:
     """One messages.create call with synchronous 429 backoff."""
-    model = os.getenv("ANALYSIS_MODEL", DEFAULT_MODEL)
+    model = os.getenv("ANALYSIS_MODEL", ANTHROPIC_DEFAULT_MODEL)
     for attempt in range(_MAX_RETRIES):
         try:
             return _get_client().messages.create(
@@ -161,7 +208,7 @@ def _create_message(messages: list[dict]) -> Any:
 
 
 def _call_claude(market: Market) -> str:
-    """Run the analysis call, resuming through server-tool pause_turns."""
+    """Run the Claude call, resuming through server-tool pause_turns."""
     messages: list[dict] = [{"role": "user", "content": _user_prompt(market)}]
     response = _create_message(messages)
     continuations = 0
@@ -176,10 +223,45 @@ def _call_claude(market: Market) -> str:
     return _last_text(response)
 
 
-def analyze_market(market: Market) -> Analysis:
-    """Analyze one market with Claude + web search. Never raises."""
+def _analyze_anthropic(market: Market) -> Analysis:
+    model = os.getenv("ANALYSIS_MODEL", ANTHROPIC_DEFAULT_MODEL)
+    return _parse_analysis(_call_claude(market), market, model)
+
+
+def _is_quota_error(e: Exception) -> bool:
+    return getattr(e, "code", None) == "insufficient_quota" or "insufficient_quota" in str(e)
+
+
+def _analyze_openai(market: Market) -> Analysis:
+    """OpenAI Responses API with the web_search tool. Reads response.output_text."""
+    model = os.getenv("OPENAI_MODEL", OPENAI_DEFAULT_MODEL)
     try:
-        text = _call_claude(market)
-        return _parse_analysis(text, market)
+        resp = _get_openai_client().responses.create(
+            model=model,
+            tools=[{"type": "web_search"}],
+            instructions=SYSTEM_PROMPT,
+            input=_user_prompt(market),
+            max_output_tokens=OPENAI_MAX_OUTPUT_TOKENS,
+        )
+    except openai.RateLimitError as e:
+        if _is_quota_error(e):
+            global _openai_exhausted
+            _openai_exhausted = True
+            _log.warning("OpenAI credits exhausted (insufficient_quota); set LLM_PROVIDER=anthropic.")
+            return Analysis(
+                market_id=market.id,
+                model=model,
+                error="OPENAI_QUOTA_EXHAUSTED: OpenAI credits are out — set LLM_PROVIDER=anthropic and restart.",
+            )
+        raise  # transient rate limit → handled by analyze_market's generic catch
+    return _parse_analysis(resp.output_text, market, model)
+
+
+def analyze_market(market: Market) -> Analysis:
+    """Analyze one market with the configured provider + web search. Never raises."""
+    try:
+        if current_provider() == "openai":
+            return _analyze_openai(market)
+        return _analyze_anthropic(market)
     except Exception as e:  # noqa: BLE001 — scanner needs graceful degradation
-        return Analysis(market_id=market.id, error=f"{type(e).__name__}: {e}")
+        return Analysis(market_id=market.id, model=current_model(), error=f"{type(e).__name__}: {e}")

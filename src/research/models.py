@@ -62,7 +62,8 @@ class Analysis(BaseModel):
     id: int | None = None
     market_id: str
     created_at: datetime = Field(default_factory=_utcnow)
-    claude_prob: float | None = None  # 0-1
+    model: str | None = None  # which LLM produced this estimate (for per-model calibration)
+    claude_prob: float | None = None  # 0-1 (the model's estimate; name kept per CALIBRATION_NOTES)
     confidence: Confidence | None = None
     edge: Edge | None = None
     edge_magnitude: float | None = None  # abs(claude_prob - market_prob)
