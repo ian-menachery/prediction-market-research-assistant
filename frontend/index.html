@@ -420,7 +420,7 @@
               <div className="empty">No markets cleared the gates. Loosen the filters and rescan.</div>
             ) : (
               <div>
-                <div className="meta-line">{results.length} ranked by annualized EV {cal && cal.calibrated ? "(calibrated)" : "(uncalibrated)"} · basis: <b>exec</b> = live bid/ask, <b>mid</b> = mid-price fallback · Bid/Ask show price ·fillable shares at that level
+                <div className="meta-line">{results.length} ranked by annualized EV {cal && cal.calibrated ? "(calibrated)" : "(uncalibrated)"} · basis: <b>exec</b> = VWAP fill over the book for the target position (<b>exec*</b> = book too thin to fill it), <b>mid</b> = mid-price fallback · Bid/Ask show top-of-book price ·fillable shares
                   {req.refute_top > 0 ? " · verdict = skeptical refutation of the top " + req.refute_top + " (model shown under each verdict)" : ""}</div>
                 <div className="table-wrap">
                   <table className="scan">
@@ -448,7 +448,13 @@
                             <td>{pct1(r.ev_pct)}</td>
                             <td>{pct1(r.kelly)}</td>
                             <td className="ann">{pct1(r.annualized_ev)}</td>
-                            <td><span className={r.executable ? "basis-exec" : "basis-mid"}>{r.executable ? "exec" : "mid"}</span></td>
+                            <td>{(() => {
+                              if (!r.executable) return <span className="basis-mid" title="mid-price fallback — no live two-sided book">mid</span>;
+                              const partial = r.fully_filled === false;
+                              const tip = `VWAP fill for $${r.target_position_usd} (${shares(r.fill_shares)} shares)`
+                                + (partial ? " · partial: book too thin to fill the full target" : "");
+                              return <span className="basis-exec" title={tip}>exec{partial ? "*" : ""}</span>;
+                            })()}</td>
                             <td>{(() => {
                               const rf = r.refutation;
                               if (!rf) return "—";
