@@ -81,6 +81,7 @@ class MarketWithAnalysis(BaseModel):
     market: Market
     latest_analysis: Analysis | None
     analysis_count: int
+    stale: bool = False  # current market_prob moved > STALE_THRESHOLD since the latest analysis
 
 
 class ScanResult(BaseModel):

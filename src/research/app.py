@@ -96,6 +96,7 @@ def get_market(market_id: str) -> Any:
             "market": market.model_dump(mode="json"),
             "latest_analysis": history[0].model_dump(mode="json") if history else None,
             "analysis_count": len(history),
+            "stale": db.is_stale(market, history[0] if history else None),
             "history": [a.model_dump(mode="json") for a in history],
         }
     )

@@ -61,6 +61,8 @@ CREATE INDEX IF NOT EXISTS idx_analyses_created_at ON analyses(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_analyses_edge_mag   ON analyses(edge_magnitude DESC);
 """
 
+STALE_THRESHOLD = 0.04  # current price moving more than this (4pp) since analysis = stale
+
 _MARKET_COLUMNS = (
     "id, slug, question, market_prob, volume_24h, volume_total, liquidity, "
     "yes_token_id, end_date, tags, description, fetched_at"
@@ -217,8 +219,19 @@ def get_analysis_history(market_id: str) -> list[Analysis]:
     return [_row_to_analysis(r) for r in rows]
 
 
+def is_stale(market: Market, latest: Analysis | None) -> bool:
+    """True if the current market price moved > STALE_THRESHOLD since ``latest`` ran.
+
+    False when there's no analysis, no at-analysis snapshot (legacy rows), or no
+    current price.
+    """
+    if latest is None or market.market_prob is None or latest.market_prob_at_analysis is None:
+        return False
+    return abs(market.market_prob - latest.market_prob_at_analysis) > STALE_THRESHOLD
+
+
 def get_markets_with_latest_analysis() -> list[MarketWithAnalysis]:
-    """All markets, each paired with its latest analysis and total analysis count.
+    """All markets, each paired with its latest analysis, count, and a stale flag.
 
     Three queries (no N+1): markets, latest-per-market, counts-per-market.
     """
@@ -236,14 +249,19 @@ def get_markets_with_latest_analysis() -> list[MarketWithAnalysis]:
 
     latest = {r["market_id"]: _row_to_analysis(r) for r in latest_rows}
     counts = {r["market_id"]: r["n"] for r in count_rows}
-    return [
-        MarketWithAnalysis(
-            market=_row_to_market(mr),
-            latest_analysis=latest.get(mr["id"]),
-            analysis_count=counts.get(mr["id"], 0),
+    out: list[MarketWithAnalysis] = []
+    for mr in market_rows:
+        mkt = _row_to_market(mr)
+        la = latest.get(mkt.id)
+        out.append(
+            MarketWithAnalysis(
+                market=mkt,
+                latest_analysis=la,
+                analysis_count=counts.get(mkt.id, 0),
+                stale=is_stale(mkt, la),
+            )
         )
-        for mr in market_rows
-    ]
+    return out
 
 
 def get_analysis_age_hours(market_id: str) -> float | None:
