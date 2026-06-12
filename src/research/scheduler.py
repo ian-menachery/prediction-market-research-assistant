@@ -82,6 +82,40 @@ def run_once() -> dict:
     return record
 
 
+def history(last_n: int = 10) -> dict:
+    """Aggregate data/scan_log.jsonl. Missing file → empty aggregate (graceful)."""
+    path = _scan_log_path()
+    records: list[dict] = []
+    if path.exists():
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except (json.JSONDecodeError, ValueError):
+                    continue  # skip a malformed / partial line
+    n = len(records)
+    if n == 0:
+        return {
+            "total_runs": 0,
+            "avg_edges_per_run": 0.0,
+            "avg_markets_scanned": 0.0,
+            "total_resolutions_captured": 0,
+            "last_runs": [],
+        }
+    edges = sum(r.get("edges_found", 0) for r in records)
+    scanned = sum(r.get("markets_scanned", 0) for r in records)
+    return {
+        "total_runs": n,
+        "avg_edges_per_run": round(edges / n, 2),
+        "avg_markets_scanned": round(scanned / n, 2),
+        "total_resolutions_captured": sum(r.get("resolutions_captured", 0) for r in records),
+        "last_runs": records[-last_n:][::-1],  # newest first
+    }
+
+
 def _interval_seconds() -> float:
     try:
         return float(os.getenv("SCAN_INTERVAL_HOURS") or 0) * 3600.0

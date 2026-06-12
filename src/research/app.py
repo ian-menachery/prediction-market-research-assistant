@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory
 from pydantic import ValidationError
 
-from research import analyzer, calibration, db, polymarket, scanner
+from research import analyzer, calibration, db, polymarket, scanner, scheduler
 from research.models import Analysis, CalibrationReport, Market, MarketWithAnalysis, ScanRequest
 
 _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
@@ -155,6 +155,11 @@ def calibration_report() -> Any:
     return jsonify([x.model_dump(mode="json") for x in reports])
 
 
+@app.get("/api/scan-history")
+def scan_history() -> Any:
+    return jsonify(scheduler.history())
+
+
 @app.get("/api/provider")
 def provider() -> Any:
     return jsonify({
@@ -193,8 +198,7 @@ def set_resolution(market_id: str) -> Any:
 
 if __name__ == "__main__":
     # Start the background auto-scan only when run as the server (never on import),
-    # so tests/scripts/test_client don't spawn live scans.
-    from research import scheduler
-
+    # so tests/scripts/test_client don't spawn live scans. (scheduler is imported at
+    # module top, but start() is called only here.)
     scheduler.start()
     app.run(host="127.0.0.1", port=5000)
