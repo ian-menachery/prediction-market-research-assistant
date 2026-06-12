@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 from research.models import Analysis, Confidence, Edge, Market
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
-WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
+WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
 MAX_TOKENS = 2000
 FAIR_BAND = 0.03  # within 3 percentage points (0-1 space) counts as "fair"
 _MAX_RETRIES = 3

@@ -121,7 +121,7 @@ def fetch_all_active(max_markets: int = 500) -> list[Market]:
 
 **SDK:** `anthropic` (Python, synchronous client)  
 **Model:** env-configurable via `ANALYSIS_MODEL`; default `claude-sonnet-4-6`  
-**Web search tool:** `web_search_20260209` (built-in dynamic filtering; supported on Sonnet 4.6)
+**Web search tool:** `web_search_20250305`
 
 ---
 
@@ -138,7 +138,7 @@ client = anthropic.Anthropic()
 response = client.messages.create(
     model="claude-sonnet-4-6",
     max_tokens=2000,
-    tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}],
+    tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
     system=SYSTEM_PROMPT,
     messages=[{"role": "user", "content": user_prompt}],
 )
