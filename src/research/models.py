@@ -113,8 +113,9 @@ class CalibrationBin(BaseModel):
 
 
 class CalibrationReport(BaseModel):
-    """Calibration status + metrics for the /api/calibration endpoint."""
+    """Calibration status + metrics for one model (/api/calibration returns a list)."""
 
+    model: str
     n: int
     calibrated: bool
     temperature: float

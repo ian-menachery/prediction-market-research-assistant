@@ -106,6 +106,16 @@
     .cal-grid { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
     .reliability { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
     .axis { font-size: 10px; fill: var(--muted); }
+    .cal-section { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px; }
+    .cal-section:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+    .cal-model { font-weight: 700; font-size: 14px; }
+
+    /* Provider */
+    .provider-chip { font-size: 12px; color: var(--muted); background: var(--gray-bg);
+      padding: 4px 10px; border-radius: 999px; margin-left: 10px; }
+    .banner-exhausted { margin-top: 10px; background: var(--red-bg); color: var(--red);
+      border: 1px solid #f5b5bb; border-radius: 8px; padding: 9px 12px; font-size: 13px; }
+    .banner-exhausted code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -146,6 +156,11 @@
       async getCalibration() {
         const r = await fetch("/api/calibration");
         if (!r.ok) throw new Error("Failed to load calibration");
+        return r.json();
+      },
+      async getProvider() {
+        const r = await fetch("/api/provider");
+        if (!r.ok) throw new Error("Failed to load provider");
         return r.json();
       },
     };
@@ -309,9 +324,15 @@
       const [results, setResults] = useState(null);
       const [scanning, setScanning] = useState(false);
       const [err, setErr] = useState(null);
-      const [cal, setCal] = useState(null);
+      const [cal, setCal] = useState(null);  // the active model's calibration report
 
-      useEffect(() => { API.getCalibration().then(setCal).catch(() => {}); }, []);
+      useEffect(() => {
+        Promise.all([API.getProvider(), API.getCalibration()])
+          .then(([prov, reports]) =>
+            setCal(reports.find((r) => r.model === prov.model)
+              || { calibrated: false, n: 0, min_n: 50, model: prov.model }))
+          .catch(() => {});
+      }, []);
 
       const num = (k) => (e) => setReq((r) => ({ ...r, [k]: Number(e.target.value) }));
 
@@ -421,14 +442,7 @@
       );
     }
 
-    function CalibrationView() {
-      const [cal, setCal] = useState(null);
-      const [err, setErr] = useState(null);
-      useEffect(() => { API.getCalibration().then(setCal).catch((e) => setErr(e.message)); }, []);
-
-      if (err) return <main><div className="err">{err}</div></main>;
-      if (!cal) return <main><div className="empty">Loading…</div></main>;
-
+    function CalibrationCard({ cal }) {
       const S = 240, PAD = 28;
       const xx = (p) => PAD + p * (S - 2 * PAD);
       const yy = (p) => (S - PAD) - p * (S - 2 * PAD);
@@ -436,21 +450,21 @@
       const pts = cal.curve.filter((b) => b.count > 0 && b.predicted_mean != null);
       const Tnote = !cal.calibrated
         ? `Insufficient resolved markets — using raw estimates (have ${cal.n}, need ${cal.min_n}). Calibration accrues as markets resolve.`
-        : cal.temperature > 1.05 ? "T > 1 → Claude is overconfident; estimates are softened toward 50%."
-        : cal.temperature < 0.95 ? "T < 1 → Claude is underconfident; estimates are sharpened."
-        : "T ≈ 1 → Claude is already well-calibrated; little correction applied.";
+        : cal.temperature > 1.05 ? "T > 1 → overconfident; estimates softened toward 50%."
+        : cal.temperature < 0.95 ? "T < 1 → underconfident; estimates sharpened."
+        : "T ≈ 1 → already well-calibrated; little correction applied.";
 
       return (
-        <main>
+        <div className="cal-section">
           <div className="cal-head">
+            <span className="cal-model">{cal.model}</span>
             <span className={"badge " + (cal.calibrated ? "up" : "fair")}>{cal.calibrated ? "calibrated" : "uncalibrated"}</span>
             <span className="kv">N <b>{cal.n}</b> / need {cal.min_n}</span>
             <span className="kv">T <b>{cal.temperature.toFixed(2)}</b></span>
             <span className="kv">Brier <b>{cal.brier.toFixed(3)}</b></span>
             <span className="kv">log-loss <b>{cal.log_loss.toFixed(3)}</b></span>
           </div>
-          <div className="cal-note">{Tnote}{" "}<a href="/api/calibration/export.csv">Export resolved pairs (CSV) ↗</a></div>
-
+          <div className="cal-note">{Tnote}</div>
           <div className="cal-grid">
             <svg width={S} height={S} className="reliability">
               <rect x={PAD} y={PAD} width={S - 2 * PAD} height={S - 2 * PAD} fill="none" stroke="var(--line)" />
@@ -478,6 +492,27 @@
               </table>
             </div>
           </div>
+        </div>
+      );
+    }
+
+    function CalibrationView() {
+      const [reports, setReports] = useState(null);
+      const [err, setErr] = useState(null);
+      useEffect(() => { API.getCalibration().then(setReports).catch((e) => setErr(e.message)); }, []);
+
+      if (err) return <main><div className="err">{err}</div></main>;
+      if (!reports) return <main><div className="empty">Loading…</div></main>;
+
+      return (
+        <main>
+          <div className="cal-note">
+            Each model is calibrated separately — mixing models would corrupt the curve.{" "}
+            <a href="/api/calibration/export.csv">Export resolved pairs (CSV) ↗</a>
+          </div>
+          {reports.length === 0
+            ? <div className="empty">No resolved markets yet — calibration appears here as markets resolve.</div>
+            : reports.map((cal) => <CalibrationCard key={cal.model} cal={cal} />)}
         </main>
       );
     }
@@ -488,6 +523,7 @@
       const [loading, setLoading] = useState(true);
       const [refreshing, setRefreshing] = useState(false);
       const [error, setError] = useState(null);
+      const [provider, setProvider] = useState(null);
 
       async function load() {
         setLoading(true);
@@ -501,6 +537,8 @@
         }
       }
       useEffect(() => { load(); }, []);
+      // Re-checks on tab change, so a quota-exhaustion that happened during a scan surfaces.
+      useEffect(() => { API.getProvider().then(setProvider).catch(() => {}); }, [view]);
 
       async function handleRefresh() {
         setRefreshing(true);
@@ -532,7 +570,13 @@
                 <span className={"tab" + (view === "scan" ? " active" : "")} onClick={() => setView("scan")}>Scan (EV)</span>
                 <span className={"tab" + (view === "calibration" ? " active" : "")} onClick={() => setView("calibration")}>Calibration</span>
               </div>
+              {provider && <span className="provider-chip">{provider.provider} · {provider.model}</span>}
             </div>
+            {provider && provider.openai_exhausted && (
+              <div className="banner-exhausted">
+                ⚠ OpenAI credits exhausted — set <code>LLM_PROVIDER=anthropic</code> in <code>.env</code> and restart the app to continue with Claude.
+              </div>
+            )}
           </header>
           {view === "markets"
             ? (loading

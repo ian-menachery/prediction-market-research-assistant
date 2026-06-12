@@ -159,22 +159,35 @@ def scan() -> Any:
 
 @app.get("/api/calibration")
 def calibration_report() -> Any:
-    r = calibration.build_recalibrator()
-    report = CalibrationReport(
-        n=r.n, calibrated=r.calibrated, temperature=r.temperature, min_n=r.min_n,
-        brier=r.brier, log_loss=r.log_loss, curve=r.curve,
-    )
-    return jsonify(report.model_dump(mode="json"))
+    recals = calibration.build_recalibrators()
+    reports = [
+        CalibrationReport(
+            model=r.model, n=r.n, calibrated=r.calibrated, temperature=r.temperature,
+            min_n=r.min_n, brier=r.brier, log_loss=r.log_loss, curve=r.curve,
+        )
+        for r in recals.values()
+    ]
+    reports.sort(key=lambda x: x.n, reverse=True)
+    return jsonify([x.model_dump(mode="json") for x in reports])
+
+
+@app.get("/api/provider")
+def provider() -> Any:
+    return jsonify({
+        "provider": analyzer.current_provider(),
+        "model": analyzer.current_model(),
+        "openai_exhausted": analyzer.openai_exhausted(),
+    })
 
 
 @app.get("/api/calibration/export.csv")
 def calibration_export() -> Any:
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["market_id", "created_at", "claude_prob", "resolution"])
+    w.writerow(["market_id", "created_at", "model", "claude_prob", "resolution"])
     for a in db.get_all_resolved_analyses():
         res = "" if a.resolution is None else (1 if a.resolution else 0)
-        w.writerow([a.market_id, a.created_at.isoformat(), a.claude_prob, res])
+        w.writerow([a.market_id, a.created_at.isoformat(), a.model or "", a.claude_prob, res])
     return Response(
         buf.getvalue(),
         mimetype="text/csv",
