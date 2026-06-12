@@ -27,42 +27,35 @@ def _days_to_close(market: Market) -> float | None:
 
 
 def _ev_fields(
-    market: Market, prob: float | None, bid: float | None, ask: float | None, min_days: float
+    market: Market, prob: float, bid: float | None, ask: float | None, min_days: float
 ) -> dict:
-    """EV on the favorable side priced at the *executable* CLOB top-of-book.
+    """EV on the favorable side, priced at the executable book when available.
 
-    Side is the directional intent (calibrated ``prob`` vs the market mid). The cost
-    is then the price you'd actually fill at: BUY YES at the ask, or bet NO at
-    ``1 - bid`` (buying NO == selling YES at the bid, by no-arbitrage). ``ev`` can be
-    negative once the spread is included — those get dropped by the min_divergence
-    gate. Annualized EV is None below the days floor.
+    Side is the directional intent (calibrated ``prob`` vs the market mid). When a
+    two-sided book is supplied (``bid`` and ``ask``), the cost is what you'd fill at:
+    BUY YES at the ask, or bet NO at ``1 - bid`` (buying NO == selling YES at the
+    bid). Otherwise it falls back to the mid price and ``executable`` is False.
+    ``ev`` can be negative once the spread is included — that's surfaced, not dropped.
     """
     mp = market.market_prob
     dtc = _days_to_close(market)
-    blank = {"side": None, "ev": None, "ev_pct": None, "kelly": None,
-             "annualized_ev": None, "days_to_close": dtc,
-             "best_bid": bid, "best_ask": ask, "price_paid": None}
-    if mp is None or prob is None:
-        return blank
-
     side = "YES" if prob > mp else "NO"
-    if side == "YES":
-        if ask is None:
-            return blank  # can't buy YES — skip
-        price_paid, ev = ask, prob - ask
-    else:
-        if bid is None:
-            return blank  # can't establish NO — skip
-        price_paid, ev = 1.0 - bid, bid - prob
-    if not (0.0 < price_paid < 1.0):
-        return {**blank, "side": side}
+    executable = bid is not None and ask is not None
 
-    ev_pct = ev / price_paid
-    kelly = ev / (1.0 - price_paid)
-    annualized = ev_pct * 365.0 / dtc if (dtc is not None and dtc >= min_days) else None
-    return {"side": side, "ev": ev, "ev_pct": ev_pct, "kelly": kelly,
+    if side == "YES":
+        price_paid = ask if executable else mp
+        ev = prob - price_paid
+    else:
+        price_paid = (1.0 - bid) if executable else (1.0 - mp)
+        ev = (1.0 - prob) - price_paid
+
+    valid = price_paid is not None and 0.0 < price_paid < 1.0
+    ev_pct = ev / price_paid if valid else None
+    kelly = ev / (1.0 - price_paid) if valid else None
+    annualized = ev_pct * 365.0 / dtc if (ev_pct is not None and dtc is not None and dtc >= min_days) else None
+    return {"side": side, "ev": ev if valid else None, "ev_pct": ev_pct, "kelly": kelly,
             "annualized_ev": annualized, "days_to_close": dtc,
-            "best_bid": bid, "best_ask": ask, "price_paid": price_paid}
+            "best_bid": bid, "best_ask": ask, "price_paid": price_paid, "executable": executable}
 
 
 def scan(req: ScanRequest) -> list[ScanResult]:
@@ -103,19 +96,25 @@ def scan(req: ScanRequest) -> list[ScanResult]:
         recal = recals.get(analysis.model) or calibration.identity_recalibrator(analysis.model)
         calibrated_p = recal.apply(analysis.claude_prob)
 
-        bid, ask = (None, None)
+        mp = m.market_prob
+        if mp is None or calibrated_p is None:
+            continue
+        # Gate on mid divergence FIRST — cheap, so we make no CLOB call for markets
+        # that don't clear the bar.
+        if abs(calibrated_p - mp) < req.min_divergence:
+            continue
+
+        # Only survivors hit the order book; fall back to mid if it's unavailable.
+        book = None
         if m.yes_token_id:
             try:
-                bid, ask = polymarket.fetch_best_bid_ask(m.yes_token_id)
-            except Exception:  # noqa: BLE001 — CLOB hiccup shouldn't kill the scan
-                bid, ask = (None, None)
+                book = polymarket.fetch_best_bid_ask(m.yes_token_id)
+            except Exception:  # noqa: BLE001 — a CLOB hiccup shouldn't kill the scan
+                book = None
+        bid, ask = book if book else (None, None)
 
         ev = _ev_fields(m, calibrated_p, bid, ask, req.min_days_to_close)
-        if ev["side"] is None:  # no executable price on the needed side — skip
-            continue
-        if ev["ev"] is None or ev["ev"] < req.min_divergence:  # gate on EXECUTABLE edge
-            continue
-        if ev["annualized_ev"] is None:  # failed the days floor (defensive)
+        if ev["annualized_ev"] is None:  # below the days floor (defensive; pre-filtered)
             continue
         results.append(ScanResult(market=m, analysis=analysis, calibrated_prob=calibrated_p, **ev))
 

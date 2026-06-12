@@ -102,7 +102,8 @@ class ScanResult(BaseModel):
     days_to_close: float | None = None
     best_bid: float | None = None  # CLOB best bid for the YES token (top of book)
     best_ask: float | None = None  # CLOB best ask for the YES token (top of book)
-    price_paid: float | None = None  # executable cost per share on the chosen side
+    price_paid: float | None = None  # cost per share on the chosen side (executable, else mid)
+    executable: bool = False  # True if priced off the live book; False = mid-price fallback
 
 
 class CalibrationBin(BaseModel):
