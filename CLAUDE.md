@@ -7,17 +7,32 @@
 This is non-negotiable. If you find yourself drafting code before stating a plan, stop.
 
 ## What this is
-A local research tool that fetches live Polymarket markets, analyzes them with Claude (web search enabled), and surfaces markets where Claude's probability estimate diverges significantly from the current price. Companion project to the calibration tracker (separate repo).
+A local research tool that fetches live Polymarket markets, analyzes them with an LLM (web search enabled), and surfaces markets where the model's probability estimate diverges significantly from the current price. Companion project to the calibration tracker (separate repo).
 
 ## Stack (locked)
-- `flask`, `httpx` (sync), `anthropic`, `pydantic`, `sqlite3` (stdlib), `python-dotenv`
+- `flask`, `httpx` (sync), `anthropic`, `openai`, `pydantic`, `sqlite3` (stdlib), `python-dotenv`
 - No `asyncio`. No `aiosqlite`. No React build pipeline. No Docker. No Postgres.
 - New dependencies require asking first.
+
+## LLM provider (dual-provider)
+The analysis engine (`analyzer.py`) supports **both OpenAI and Anthropic**, selected at
+runtime by the `LLM_PROVIDER` env var (`openai` or `anthropic`). Each `Analysis` records the
+`model` that produced it, so calibration stays per-model across a provider switch.
+
+- **Currently primary: OpenAI** — `.env` sets `LLM_PROVIDER=openai` and `OPENAI_MODEL=gpt-5.5`.
+- Switch providers by changing `LLM_PROVIDER` in `.env` (then restart). No code change needed.
+- Per-provider model overrides: `OPENAI_MODEL` (default `gpt-5.5`) and `ANALYSIS_MODEL`
+  (Anthropic, default `claude-sonnet-4-6`). Note: the code's built-in `LLM_PROVIDER` default is
+  `anthropic`; the `.env` value overrides it, which is why OpenAI is what actually runs.
+- No silent fallback: if OpenAI credits are exhausted (`insufficient_quota`), the engine latches
+  `openai_exhausted` and returns an explicit error telling you to set `LLM_PROVIDER=anthropic` —
+  it does not quietly switch to Claude.
 
 ## Quick start
 ```bash
 make install
-cp .env.example .env    # add ANTHROPIC_API_KEY
+cp .env.example .env    # set LLM_PROVIDER + the matching API key
+                        # (OpenAI: OPENAI_API_KEY; Anthropic: ANTHROPIC_API_KEY)
 make run                # → http://localhost:5000
 ```
 
@@ -34,7 +49,7 @@ polymarket-research/
 │       ├── models.py         ← Pydantic models
 │       ├── db.py             ← sqlite3 access layer (sync only)
 │       ├── polymarket.py     ← Polymarket API client (httpx sync)
-│       ├── analyzer.py       ← Claude analysis engine
+│       ├── analyzer.py       ← LLM analysis engine (OpenAI or Anthropic, via LLM_PROVIDER)
 │       ├── scanner.py        ← batch divergence scanner
 │       └── app.py            ← Flask app + all routes
 ├── frontend/
@@ -62,7 +77,7 @@ polymarket-research/
 - Do not "clean up" code I didn't ask you to clean up — mention it, don't fix it silently
 - Do not invent data. If an API call fails, surface the error — never fill with zeros
 - Do not use `asyncio` anywhere. Use `time.sleep()` for rate limiting.
-- Do not hardcode the Anthropic API key
+- Do not hardcode API keys (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) — read them from env
 
 ## Things you should do
 - After each substantive change, suggest a commit message (short, imperative)
