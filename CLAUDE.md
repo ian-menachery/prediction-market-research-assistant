@@ -1,10 +1,12 @@
 # Polymarket Research Copilot — CLAUDE.md
 
-## The single most important rule
+## Working agreement on planning
 
-**Before writing or modifying code, state the plan in 3–5 sentences and wait for confirmation.** No exceptions, even for "small" changes. If I say "go ahead" or "looks good," then implement. If I push back, revise the plan.
+Plan-first is **relaxed** (owner's call, 2026-06-13): commit changes directly to `main`
+and make code edits without stating a plan or waiting for confirmation first.
 
-This is non-negotiable. If you find yourself drafting code before stating a plan, stop.
+Still state a brief plan when a change is large, risky, ambiguous, or hard to reverse —
+otherwise just implement. Surface contradictions and unexpected findings as before.
 
 ## What this is
 A local research tool that fetches live Polymarket markets, analyzes them with an LLM (web search enabled), and surfaces markets where the model's probability estimate diverges significantly from the current price. Companion project to the calibration tracker (separate repo).
