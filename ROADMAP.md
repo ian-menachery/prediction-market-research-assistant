@@ -57,6 +57,9 @@ Goal: automation, intelligence, and portfolio simulation.
 - [ ] Multi-model comparison: run GPT-4o on same market, compare estimates
 - [ ] Webhook/Slack notification for high-divergence markets
 
+## Future polish
+- [ ] Add log rotation or size cap for data/app.log (currently unbounded append)
+
 ## Won't do (scope limits)
 - Actual Polymarket trading / order placement (read-only by design)
 - User authentication (local tool, single user)

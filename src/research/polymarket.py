@@ -188,6 +188,7 @@ def _fetch_page(
         "ascending": "false",
         "limit": limit,
         "offset": offset,
+        "include_tag": "true",  # Gamma omits `tags` from /markets rows unless this is set
     }
     if tag:
         params["tag_slug"] = tag
