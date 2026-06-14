@@ -183,7 +183,10 @@ def _extract_json(text: str) -> dict:
 def _normalize_prob(result: dict) -> float:
     """Claude returns 0-100 (occasionally 0-1). Return a clamped 0-1 float."""
     raw = float(result["probability"])
-    pct = raw * 100 if raw <= 1 else raw
+    # The model is told to return an integer 0-100 (so 1 == 1%). Only treat values
+    # strictly below 1 as a 0-1 fraction fallback (e.g. 0.04 -> 4%); otherwise the
+    # integer 1 (= 1%) gets wrongly scaled to 100%. Values in [1, 100] are percents.
+    pct = raw * 100 if raw < 1 else raw
     pct = max(0.0, min(100.0, pct))
     return pct / 100.0
 
