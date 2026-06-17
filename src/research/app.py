@@ -10,6 +10,7 @@ import csv
 import io
 import logging
 import os
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -231,14 +232,27 @@ def provider_reset() -> Any:
     return jsonify({"openai_exhausted": analyzer.openai_exhausted()})
 
 
+def _days_before_close(created_at: str | None, end_date: str | None) -> str:
+    """Forecast horizon in whole days, or "" when either timestamp is missing/unparseable."""
+    if not created_at or not end_date:
+        return ""
+    try:
+        return str((datetime.fromisoformat(end_date) - datetime.fromisoformat(created_at)).days)
+    except (ValueError, TypeError):
+        return ""
+
+
 @app.get("/api/calibration/export.csv")
 def calibration_export() -> Any:
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["market_id", "created_at", "model", "claude_prob", "resolution"])
-    for a in db.get_all_resolved_analyses():
-        res = "" if a.resolution is None else (1 if a.resolution else 0)
-        w.writerow([a.market_id, a.created_at.isoformat(), a.model or "", a.claude_prob, res])
+    w.writerow(["market_id", "created_at", "model", "claude_prob", "resolution", "days_before_close"])
+    for r in db.get_resolved_export_rows():
+        res = "" if r["resolution"] is None else (1 if r["resolution"] else 0)
+        w.writerow([
+            r["market_id"], r["created_at"], r["model"] or "", r["claude_prob"], res,
+            _days_before_close(r["created_at"], r["end_date"]),
+        ])
     return Response(
         buf.getvalue(),
         mimetype="text/csv",

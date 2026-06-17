@@ -25,6 +25,7 @@ from research.models import ScanRequest
 _log = logging.getLogger(__name__)
 _timer: threading.Timer | None = None
 _resolution_timer: threading.Timer | None = None
+_stale_timer: threading.Timer | None = None
 # Serializes DB-writing runs so the scan timer's end-of-run sweep and the resolution
 # timer's sweep never write sqlite concurrently ("database is locked"). A long scan just
 # makes a due sweep wait — intended.
@@ -114,6 +115,23 @@ def run_sweep_once() -> int:
     return resolutions_captured
 
 
+def run_stale_reanalysis_once() -> int:
+    """Re-analyze stale markets once (no scan), return the count. Never raises.
+
+    Spends LLM budget (bounded by ``STALE_REANALYZE_MAX``), so it's gated on its own
+    interval and serialized with scans/sweeps via the run lock. Logs NO scan_log line.
+    """
+    reanalyzed = 0
+    with _run_lock:  # don't write the DB while a scan/sweep is in flight
+        try:
+            reanalyzed = scanner.reanalyze_stale()
+        except Exception as e:  # noqa: BLE001 — a failed pass must not kill the scheduler
+            _log.warning("stale re-analysis failed: %s: %s", type(e).__name__, e)
+            return 0
+    _log.info("stale re-analysis: reanalyzed=%d", reanalyzed)
+    return reanalyzed
+
+
 def history(last_n: int = 10) -> dict:
     """Aggregate data/scan_log.jsonl. Missing file → empty aggregate (graceful)."""
     path = _scan_log_path()
@@ -163,6 +181,10 @@ def _resolution_interval_seconds() -> float:
     return _hours_env_seconds("AUTO_RESOLUTION_INTERVAL_HOURS")
 
 
+def _stale_interval_seconds() -> float:
+    return _hours_env_seconds("STALE_REANALYZE_INTERVAL_HOURS")
+
+
 def _tick() -> None:
     try:
         run_once()
@@ -176,6 +198,13 @@ def _resolution_tick() -> None:
         run_sweep_once()
     finally:
         _arm_resolution(_resolution_interval_seconds())
+
+
+def _stale_tick() -> None:
+    try:
+        run_stale_reanalysis_once()
+    finally:
+        _arm_stale(_stale_interval_seconds())
 
 
 def _arm(interval_s: float) -> None:
@@ -192,12 +221,20 @@ def _arm_resolution(interval_s: float) -> None:
     _resolution_timer.start()
 
 
+def _arm_stale(interval_s: float) -> None:
+    global _stale_timer
+    _stale_timer = threading.Timer(interval_s, _stale_tick)
+    _stale_timer.daemon = True
+    _stale_timer.start()
+
+
 def start() -> None:
     """Arm the recurring timers. Call once, from __main__.
 
-    Two independent cadences: a full scan + sweep on SCAN_INTERVAL_HOURS, and a cheaper
+    Three independent cadences: a full scan + sweep on SCAN_INTERVAL_HOURS, a cheaper
     resolution-only sweep on AUTO_RESOLUTION_INTERVAL_HOURS (so resolutions are captured
-    more often than the expensive scans). Either is off when its var is blank/0.
+    more often than the expensive scans), and an optional stale re-analysis pass on
+    STALE_REANALYZE_INTERVAL_HOURS. Each is off when its var is blank/0.
     """
     scan_s = _interval_seconds()
     if scan_s > 0:
@@ -212,3 +249,10 @@ def start() -> None:
         _log.info("auto-resolution sweep armed (every %.2fh)", res_s / 3600.0)
     else:
         _log.info("auto-resolution sweep disabled (set AUTO_RESOLUTION_INTERVAL_HOURS to enable)")
+
+    stale_s = _stale_interval_seconds()
+    if stale_s > 0:
+        _arm_stale(stale_s)
+        _log.info("stale re-analysis armed (every %.2fh)", stale_s / 3600.0)
+    else:
+        _log.info("stale re-analysis disabled (set STALE_REANALYZE_INTERVAL_HOURS to enable)")

@@ -91,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_signals_market_id  ON signals(market_id);
 CREATE INDEX IF NOT EXISTS idx_signals_created_at ON signals(created_at DESC);
 """
 
-STALE_THRESHOLD = 0.04  # current price moving more than this (4pp) since analysis = stale
+STALE_THRESHOLD = float(os.getenv("STALE_THRESHOLD", "0.04"))  # price move (0-1) since analysis = stale
 
 _MARKET_COLUMNS = (
     "id, exchange, slug, question, market_prob, volume_24h, volume_total, liquidity, "
@@ -422,6 +422,23 @@ def get_all_resolved_analyses() -> list[Analysis]:
     with _conn() as conn:
         rows = conn.execute("SELECT * FROM analyses WHERE resolved = 1 ORDER BY id").fetchall()
     return [_row_to_analysis(r) for r in rows]
+
+
+def get_resolved_export_rows() -> list[dict]:
+    """Resolved analyses joined to their market's ``end_date`` — drives the calibration CSV.
+
+    Returns plain dicts with the stored ISO ``created_at``/``end_date`` strings so the route
+    can derive ``days_before_close`` (forecast horizon) without another lookup. Unfiltered:
+    the export is the source of record (the parser-corruption filter is calibration-only).
+    """
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT a.market_id, a.created_at, a.model, a.claude_prob, a.resolution, "
+            "m.end_date AS end_date "
+            "FROM analyses a LEFT JOIN markets m ON a.market_id = m.id "
+            "WHERE a.resolved = 1 ORDER BY a.id"
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # --- signals (forward edge log) ------------------------------------------------

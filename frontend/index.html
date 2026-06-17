@@ -57,6 +57,12 @@
     .tag.exch { font-weight: 700; text-transform: capitalize; }
     .tag.exch.polymarket { color: #7c3aed; background: #ede9fe; }
     .tag.exch.kalshi { color: #16a34a; background: #dcfce7; }
+    .hist-toggle { cursor: pointer; color: var(--muted); user-select: none; }
+    .hist-toggle:hover { color: var(--fg); }
+    .history { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px;
+      background: var(--gray-bg); border-radius: 7px; }
+    .hist-row { display: flex; gap: 10px; font-size: 12px; align-items: baseline; }
+    .hist-date { color: var(--muted); min-width: 80px; }
     .q { font-weight: 600; font-size: 15px; }
     .stats { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
     .prob { font-size: 30px; font-weight: 700; line-height: 1; }
@@ -174,6 +180,11 @@
         if (!r.ok) throw new Error("Failed to load provider");
         return r.json();
       },
+      async getMarket(id) {
+        const r = await fetch(`/api/markets/${id}`);
+        if (!r.ok) throw new Error("Failed to load market");
+        return r.json();
+      },
       async resetProvider() {
         const r = await fetch("/api/provider/reset", { method: "POST" });
         if (!r.ok) throw new Error("Failed to reset provider");
@@ -201,7 +212,8 @@
     const pct1 = (x) => (x == null ? "—" : (x * 100).toFixed(0) + "%");
     const money = (n) => (n == null ? "—" : "$" + Math.round(n).toLocaleString("en-US"));
     const shares = (n) => (n == null ? "" : n >= 1000 ? Math.round(n / 1000) + "k" : String(Math.round(n)));
-    const tradeUrl = (slug) => `https://polymarket.com/event/${slug}`;
+    const tradeUrl = (slug, exchange) =>
+      exchange === "kalshi" ? `https://kalshi.com/markets/${slug}` : `https://polymarket.com/event/${slug}`;
 
     function timeToClose(iso) {
       if (!iso) return "—";
@@ -226,16 +238,32 @@
         ? Math.round((m.market_prob - a.market_prob_at_analysis) * 100) : null;
       const [busy, setBusy] = useState(false);
       const [err, setErr] = useState(null);
+      const [histOpen, setHistOpen] = useState(false);
+      const [hist, setHist] = useState(null);
 
       async function runAnalyze() {
         setBusy(true);
         setErr(null);
         try {
           onAnalyzed(m.id, await API.analyze(m.id));
+          setHist(null);  // invalidate cached history; a new pass was just added
         } catch (e) {
           setErr(e.message);
         } finally {
           setBusy(false);
+        }
+      }
+
+      async function toggleHistory() {
+        const next = !histOpen;
+        setHistOpen(next);
+        if (next && hist == null) {
+          try {
+            const d = await API.getMarket(m.id);
+            setHist(d.history || []);
+          } catch (e) {
+            setErr(e.message);
+          }
         }
       }
 
@@ -273,12 +301,31 @@
           )}
           {a && a.summary && <div className="summary">{a.summary}</div>}
           {a && a.confidence && (
-            <div className="conf">confidence: <b>{a.confidence}</b>{analysis_count > 1 && <span> · analyzed {analysis_count}×</span>}</div>
+            <div className="conf">confidence: <b>{a.confidence}</b>
+              {analysis_count > 1 && (
+                <span className="hist-toggle" onClick={toggleHistory}> · analyzed {analysis_count}× {histOpen ? "▴" : "▾"}</span>
+              )}
+            </div>
+          )}
+          {histOpen && (
+            <div className="history">
+              {hist == null
+                ? <span className="dim">loading…</span>
+                : hist.map((h, i) => (
+                    <div className="hist-row" key={i}>
+                      <span className="hist-date">{new Date(h.created_at).toLocaleDateString()}</span>
+                      <span>Claude <b>{pct(h.claude_prob)}</b></span>
+                      {h.market_prob_at_analysis != null && <span className="dim">mkt {pct(h.market_prob_at_analysis)}</span>}
+                      {h.confidence && <span className="dim">{h.confidence}</span>}
+                      {h.error && <span className="dim">error</span>}
+                    </div>
+                  ))}
+            </div>
           )}
           {a && <div className="disclaimer">Claude's estimate — a research aid, not financial advice.</div>}
           {err && <div className="err">{err}</div>}
           <div className="row-end">
-            <a href={tradeUrl(m.slug)} target="_blank" rel="noopener noreferrer">Trade ↗</a>
+            <a href={tradeUrl(m.slug, m.exchange)} target="_blank" rel="noopener noreferrer">Trade ↗</a>
             <button onClick={runAnalyze} disabled={busy} className={a ? "" : "primary"}>
               {busy ? <span className="spinner"></span> : a ? "Re-analyze" : "Analyze with Claude ↗"}
             </button>
@@ -492,7 +539,7 @@
                             <td>{r.days_to_close != null ? Math.round(r.days_to_close) + "d" : "—"}</td>
                             <td>{a.confidence || "—"}</td>
                             <td className="q-cell">{m.question}</td>
-                            <td><a href={tradeUrl(m.slug)} target="_blank" rel="noopener noreferrer">Trade ↗</a></td>
+                            <td><a href={tradeUrl(m.slug, m.exchange)} target="_blank" rel="noopener noreferrer">Trade ↗</a></td>
                           </tr>
                         );
                       })}

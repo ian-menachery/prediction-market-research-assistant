@@ -49,13 +49,13 @@ Goal: track resolution and feed into calibration tracker.
 ## Phase 5 — Advanced
 Goal: automation, intelligence, and portfolio simulation.
 
-- [ ] Scheduled background fetching (APScheduler)
-- [ ] Change detection: alert when a market's price moves >5pp since last analysis
-- [ ] Re-analysis suggestions: flag markets where Claude's estimate may be stale
-- [ ] Portfolio simulator: hypothetical P&L if you bet on every edge signal
-- [ ] Backtesting: apply scanner to resolved markets, score against outcomes
-- [ ] Multi-model comparison: run GPT-4o on same market, compare estimates
-- [ ] Webhook/Slack notification for high-divergence markets
+- [x] Scheduled background fetching — stdlib `threading.Timer` in `scheduler.py` (not APScheduler); `SCAN_INTERVAL_HOURS` + `AUTO_RESOLUTION_INTERVAL_HOURS`
+- [x] Change detection: flag markets whose price moved since analysis — `db.is_stale` (4pp via `STALE_THRESHOLD`), surfaced as the stale badge
+- [x] Re-analysis suggestions for stale estimates — stale badge + manual re-analyze; optional auto-reanalysis via `STALE_REANALYZE_INTERVAL_HOURS` (`scanner.reanalyze_stale`)
+- [x] Portfolio simulator — `scripts/portfolio_sim.py` (crowd fade-to-0.5 Kelly baseline); own-signal realized P&L shown in the Signals view
+- [x] Backtesting — `scripts/backtest_crowd_calibration.py` (crowd calibration vs outcomes; read-only baseline, not a forward Claude backtest)
+- [x] Multi-model comparison — cross-model adversarial refutation (`CROSS_MODEL_ADVERSARIAL`, `analyzer.refute_edge`); verdict column in the scanner
+- [x] Webhook notification for high-divergence markets — `scanner.emit_alerts` → `data/alerts.jsonl` + `ALERT_WEBHOOK_URL`; alerts table in the UI
 
 ## Future polish
 - [x] Add log rotation or size cap for data/app.log (currently unbounded append) — RotatingFileHandler via `app._init_logging()`

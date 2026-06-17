@@ -192,13 +192,17 @@ class CalibrationReport(BaseModel):
 
 
 class ScanRequest(BaseModel):
-    """Parameters controlling a batch EV scan."""
+    """Parameters controlling a batch EV scan.
 
-    min_volume_24h: float = 10_000
-    max_age_hours: float = 24.0
-    min_divergence: float = 0.05
+    Bounds reject pathological requests (e.g. ``max_markets=10**6``, negative gates) with a
+    422/400 instead of exhausting memory or LLM budget. Defaults are unchanged.
+    """
+
+    min_volume_24h: float = Field(default=10_000, ge=0)
+    max_age_hours: float = Field(default=24.0, ge=0)
+    min_divergence: float = Field(default=0.05, ge=0, le=1)
     category: str | None = None
-    max_markets: int = 100
-    min_liquidity: float = 0.0
-    min_days_to_close: float = 7.0  # below this, annualized EV is noise — exclude
-    refute_top: int = 0  # adversarially refute the top-N ranked edges (0 = off; bounds cost)
+    max_markets: int = Field(default=100, ge=1, le=1000)
+    min_liquidity: float = Field(default=0.0, ge=0)
+    min_days_to_close: float = Field(default=7.0, ge=0)  # below this, annualized EV is noise
+    refute_top: int = Field(default=0, ge=0, le=50)  # refute top-N ranked edges (0 = off)

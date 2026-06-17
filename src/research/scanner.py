@@ -25,7 +25,7 @@ from research.models import Market, ScanRequest, ScanResult, Signal
 
 _log = logging.getLogger(__name__)
 
-REFUTE_BAND = 0.03  # refuter must still diverge from the market by this much for the edge to "hold"
+REFUTE_BAND = float(os.getenv("REFUTE_BAND", "0.03"))  # refuter must still diverge from the market by this much to "hold"
 
 
 def _refute_verdict(side: str, market_prob: float | None, cal_refuter: float | None) -> str | None:
@@ -249,6 +249,30 @@ def sweep_resolutions() -> int:
     return resolved
 
 
+def reanalyze_stale() -> int:
+    """Re-analyze markets whose price drifted past the stale threshold; return the count.
+
+    Stale = ``db.is_stale`` flagged (current price moved > ``STALE_THRESHOLD`` since the
+    latest analysis). Bounded by ``STALE_REANALYZE_MAX`` (default 20) so one run can't blow
+    the LLM budget; the cap being hit is logged (never a silent truncation). Failed analyses
+    aren't persisted (graceful — matches ``scan``).
+    """
+    cap = int(os.getenv("STALE_REANALYZE_MAX", "20"))
+    delay = float(os.getenv("ANALYSIS_DELAY_SECONDS", "1.5"))
+    stale = [mwa.market for mwa in db.get_markets_with_latest_analysis() if mwa.stale]
+    reanalyzed = 0
+    for m in stale[:cap]:
+        analysis = analyzer.analyze_market(m)
+        if analysis.error:
+            continue
+        db.save_analysis(analysis)
+        reanalyzed += 1
+        time.sleep(delay)
+    if len(stale) > cap:
+        _log.info("reanalyze_stale: %d stale markets found, capped at %d this run", len(stale), cap)
+    return reanalyzed
+
+
 def persist_signals(results: list[ScanResult]) -> int:
     """Log the actionable subset of a scan as forward signals; return the count saved.
 
@@ -312,8 +336,8 @@ def _post_webhook(url: str, payload: dict) -> None:
             url, data=data, headers={"Content-Type": "application/json"}
         )
         urllib.request.urlopen(req, timeout=5).close()
-    except Exception:  # noqa: BLE001 — best-effort; never raise
-        pass
+    except Exception as e:  # noqa: BLE001 — best-effort; never raise
+        _log.debug("webhook POST failed: %s", e)
 
 
 def emit_alerts(results: list[ScanResult]) -> int:

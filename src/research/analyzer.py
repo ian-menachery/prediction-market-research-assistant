@@ -38,9 +38,9 @@ OPENAI_DEFAULT_MODEL = "gpt-5.5"
 # only (never blocks), so an omission costs at most a spurious warning.
 KNOWN_OPENAI_MODELS = frozenset({"gpt-5.5", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4o"})
 WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
-MAX_TOKENS = 2000
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "2000"))
 OPENAI_MAX_OUTPUT_TOKENS = 3000
-FAIR_BAND = 0.03  # within 3 percentage points (0-1 space) counts as "fair"
+FAIR_BAND = float(os.getenv("FAIR_BAND", "0.03"))  # within this (0-1 space) counts as "fair"
 _MAX_RETRIES = 3
 _MAX_PAUSE_CONTINUATIONS = 3
 
