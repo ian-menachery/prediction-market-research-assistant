@@ -59,7 +59,7 @@ Goal: automation, intelligence, and portfolio simulation.
 
 ## Future polish
 - [ ] Add log rotation or size cap for data/app.log (currently unbounded append)
-- [ ] Exclude analyses where claude_prob=1.0 and summary contains '1%' from calibration queries (parser-corrupted rows, id=14)
+- [x] Exclude analyses where claude_prob=1.0 and summary contains '1%' from calibration queries (parser-corrupted rows, id=14) — filtered via `db._NOT_CORRUPTED`
 
 ## Won't do (scope limits)
 - Actual Polymarket trading / order placement (read-only by design)

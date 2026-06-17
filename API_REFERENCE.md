@@ -187,7 +187,7 @@ result = json.loads(match.group(0))
 ```
 
 **Field notes:**
-- `probability`: integer 0–100; Claude occasionally returns 0–1 range — normalize with `if prob <= 1: prob *= 100`
+- `probability`: integer 0–100; Claude occasionally returns a 0–1 fraction. Normalize with `pct = raw * 100 if raw < 1 else raw` — strictly `< 1`, so the integer `1` (= 1%) is **not** rescaled to 100% (see `analyzer._normalize_prob`)
 - `edge`: `"underpriced"` = your estimate is higher than market (consider buying YES); `"overpriced"` = your estimate is lower (consider buying NO); `"fair"` = within 3pp
 - `factors`: keep to 2–4 items max in the prompt — Claude tends to pad otherwise
 

@@ -35,7 +35,7 @@ from datetime import datetime
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from research.models import Market
 

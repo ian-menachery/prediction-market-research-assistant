@@ -382,15 +382,26 @@ def get_unresolved_analyzed_market_ids() -> list[str]:
     return [r["market_id"] for r in rows]
 
 
+# Parser-corrupted calibration rows: an integer "1" answer (= 1%) that the old
+# normalization scaled to claude_prob = 1.0 (100%). Identified by prob == 1.0 with a
+# summary that mentions "1%". Excluded from calibration reads so they don't poison the
+# metrics — the rows themselves are kept (append-only). See ROADMAP.md. The ESCAPE makes
+# the trailing % in "1%" a literal; COALESCE keeps a NULL summary from NULL-ing the whole
+# predicate (which would wrongly drop a legitimate claude_prob = 1.0 row).
+_NOT_CORRUPTED = "NOT (claude_prob = 1.0 AND COALESCE(summary, '') LIKE '%1\\%%' ESCAPE '\\')"
+
+
 def get_resolved_pairs_by_model() -> dict[str, list[tuple[float, bool]]]:
     """Resolved (claude_prob, outcome) pairs grouped by model — calibration dataset.
 
     Rows with a NULL model (legacy, pre-tagging) are grouped under "unknown".
+    Parser-corrupted rows (see ``_NOT_CORRUPTED``) are excluded.
     """
     with _conn() as conn:
         rows = conn.execute(
             "SELECT model, claude_prob, resolution FROM analyses "
-            "WHERE resolved = 1 AND resolution IS NOT NULL AND claude_prob IS NOT NULL"
+            "WHERE resolved = 1 AND resolution IS NOT NULL AND claude_prob IS NOT NULL "
+            f"AND {_NOT_CORRUPTED}"
         ).fetchall()
     out: dict[str, list[tuple[float, bool]]] = {}
     for r in rows:

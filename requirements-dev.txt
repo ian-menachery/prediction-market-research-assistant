@@ -1,0 +1,3 @@
+# Dev/test-only dependencies. Kept out of the locked runtime requirements.txt.
+pytest>=8.0
+ruff>=0.5

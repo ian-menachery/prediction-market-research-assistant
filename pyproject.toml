@@ -1,0 +1,18 @@
+# Config only — no build-system section. The project is run via the Makefile, not
+# packaged/installed. This file configures pytest and ruff (dev tools in
+# requirements-dev.txt); the runtime stack stays as declared in requirements.txt.
+
+[tool.pytest.ini_options]
+# src/ holds the `research` package; put it on sys.path so `from research import ...`
+# works under bare `pytest` (mirrors the Makefile's PYTHONPATH=src).
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Default rules plus flake8-blind-except (BLE) so the deliberate broad catches keep
+# their explanatory `# noqa: BLE001` and stray ones get flagged.
+extend-select = ["BLE"]
