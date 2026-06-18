@@ -13,15 +13,13 @@ against the exchanges and never places orders.
 
 ## Demo
 
-| Markets — model vs. the market | EV divergence scanner |
-| --- | --- |
-| ![Markets](docs/img/markets.png) | ![Scanner](docs/img/scanner.png) |
+![Markets view — each LLM estimate against the live market price, with a divergence badge](docs/img/markets.png)
 
-<sub>The markets view shows each LLM estimate against the live price with a divergence badge;
-the scanner ranks markets by annualized EV off the executable order-book price. The
-**Leaderboard** (per-model Brier / log-loss / Brier skill) and **Performance** (equity-curve
-track record) views fill in as analyzed markets resolve. See [`docs/img/`](docs/img/) for how to
-regenerate these.</sub>
+<sub>The markets view shows each LLM estimate against the live price with a divergence badge.
+The other tabs — **Scan (EV)** (markets ranked by annualized EV off the executable order-book
+price), **Leaderboard** (per-model Brier / log-loss / Brier skill), and **Performance**
+(equity-curve track record) — fill in as you run scans and analyzed markets resolve. See
+[`docs/img/`](docs/img/) for how to capture them.</sub>
 
 ## What it does
 
