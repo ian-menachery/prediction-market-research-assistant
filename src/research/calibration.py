@@ -88,6 +88,44 @@ def fit_temperature(pairs: list[tuple[float, bool]]) -> float:
     return (lo + hi) / 2.0
 
 
+def accuracy(pairs: list[tuple[float, bool]]) -> float:
+    """Directional hit rate: fraction where the side past 0.5 matched the outcome.
+
+    A prediction of exactly 0.5 makes no directional call, so it scores half-credit.
+    """
+    if not pairs:
+        return 0.0
+    hits = 0.0
+    for p, y in pairs:
+        if p == 0.5:
+            hits += 0.5
+        elif (p > 0.5) == y:
+            hits += 1.0
+    return hits / len(pairs)
+
+
+def base_rate(pairs: list[tuple[float, bool]]) -> float:
+    """Empirical YES rate over the resolved set (the naive climatology forecast)."""
+    if not pairs:
+        return 0.0
+    return sum(1 for _, y in pairs if y) / len(pairs)
+
+
+def brier_skill_score(pairs: list[tuple[float, bool]]) -> float | None:
+    """Brier skill vs always forecasting the base rate: 1 - brier / brier_baserate.
+
+    > 0 means the model beats the naive climatology; 0 ties it; < 0 is worse. ``None`` when
+    undefined — no pairs, or a degenerate all-one-outcome set (baseline Brier is 0).
+    """
+    if not pairs:
+        return None
+    ref = base_rate(pairs)
+    ref_brier = brier_score([(ref, y) for _, y in pairs])
+    if ref_brier == 0.0:
+        return None
+    return 1.0 - brier_score(pairs) / ref_brier
+
+
 def calibration_curve(pairs: list[tuple[float, bool]], bins: int = _BINS) -> list[dict]:
     """Reliability bins: predicted mean vs empirical resolve-rate per probability bin."""
     out: list[dict] = []
@@ -158,3 +196,30 @@ def build_recalibrators() -> dict[str, Recalibrator]:
         model: _build_one(model, pairs)
         for model, pairs in db.get_resolved_pairs_by_model().items()
     }
+
+
+def model_leaderboard() -> list[dict]:
+    """Per-model forecasting scorecard from the resolved set — the LLM-eval leaderboard.
+
+    Reuses ``_build_one`` for N / Brier / log-loss / temperature, and adds directional
+    accuracy and Brier skill score (vs the base-rate forecast). Sorted best-first by Brier
+    (ties broken by larger N). Models with no resolved pairs are omitted — nothing to score.
+    """
+    out: list[dict] = []
+    for model, pairs in db.get_resolved_pairs_by_model().items():
+        if not pairs:
+            continue
+        recal = _build_one(model, pairs)
+        out.append({
+            "model": model,
+            "n": recal.n,
+            "calibrated": recal.calibrated,
+            "brier": recal.brier,
+            "log_loss": recal.log_loss,
+            "temperature": recal.temperature,
+            "accuracy": accuracy(pairs),
+            "base_rate": base_rate(pairs),
+            "brier_skill": brier_skill_score(pairs),
+        })
+    out.sort(key=lambda e: (e["brier"], -e["n"]))
+    return out

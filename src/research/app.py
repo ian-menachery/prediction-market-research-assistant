@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory
 from pydantic import ValidationError
 
-from research import analyzer, calibration, db, polymarket, scanner, scheduler
+from research import analyzer, calibration, db, performance, polymarket, scanner, scheduler
 from research.models import Analysis, CalibrationReport, Market, MarketWithAnalysis, ScanRequest
 
 _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
@@ -197,6 +197,18 @@ def calibration_report() -> Any:
     ]
     reports.sort(key=lambda x: x.n, reverse=True)
     return jsonify([x.model_dump(mode="json") for x in reports])
+
+
+@app.get("/api/leaderboard")
+def leaderboard() -> Any:
+    """Per-model forecasting scorecard (Brier / log-loss / accuracy / Brier skill)."""
+    return jsonify(calibration.model_leaderboard())
+
+
+@app.get("/api/performance")
+def performance_report() -> Any:
+    """Track record derived from settled forward signals (equity curve + risk/return stats)."""
+    return jsonify(performance.report())
 
 
 @app.get("/api/scan-history")

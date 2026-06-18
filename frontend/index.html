@@ -205,6 +205,16 @@
         if (!r.ok) throw new Error("Failed to load alerts");
         return r.json();
       },
+      async getLeaderboard() {
+        const r = await fetch("/api/leaderboard");
+        if (!r.ok) throw new Error("Failed to load leaderboard");
+        return r.json();
+      },
+      async getPerformance() {
+        const r = await fetch("/api/performance");
+        if (!r.ok) throw new Error("Failed to load performance");
+        return r.json();
+      },
     };
 
     // --- formatting helpers ---
@@ -780,6 +790,162 @@
       );
     }
 
+    function LeaderboardView() {
+      const [rows, setRows] = useState(null);
+      const [err, setErr] = useState(null);
+      const [sort, setSort] = useState("brier");
+      useEffect(() => { API.getLeaderboard().then(setRows).catch((e) => setErr(e.message)); }, []);
+
+      if (err) return <main><div className="err">{err}</div></main>;
+      if (!rows) return <main><div className="empty">Loading…</div></main>;
+      if (rows.length === 0)
+        return <main><div className="empty">No resolved markets yet — the model leaderboard appears as forecasts resolve.</div></main>;
+
+      // Lower is better for brier/log_loss; higher is better for accuracy/brier_skill/n.
+      const lowerBetter = sort === "brier" || sort === "log_loss";
+      const sorted = [...rows].sort((a, b) => {
+        const av = a[sort], bv = b[sort];
+        const x = av == null ? -Infinity : av, y = bv == null ? -Infinity : bv;
+        return lowerBetter ? x - y : y - x;
+      });
+      const Th = ({ k, children }) => (
+        <th onClick={() => setSort(k)} style={{ cursor: "pointer" }} title="Sort by this column">
+          {children}{sort === k ? " ▾" : ""}
+        </th>
+      );
+      const skill = (x) => (x == null ? "—" : (x >= 0 ? "+" : "") + (x * 100).toFixed(0) + "%");
+
+      return (
+        <main>
+          <div className="cal-note">
+            Every LLM scored on its own resolved forecasts — an apples-to-apples eval. Lower{" "}
+            <b>Brier</b> / <b>log-loss</b> is better; <b>Brier skill</b> &gt; 0 beats the naive
+            base-rate forecast; calibration <b>temp</b> shows over- (T&gt;1) / under- (T&lt;1)
+            confidence. Click a column to sort.
+          </div>
+          <div className="table-wrap">
+            <table className="scan">
+              <thead>
+                <tr>
+                  <th className="q-cell">Model</th>
+                  <Th k="n">N</Th>
+                  <Th k="brier">Brier</Th>
+                  <Th k="log_loss">Log-loss</Th>
+                  <Th k="accuracy">Accuracy</Th>
+                  <Th k="brier_skill">Brier skill</Th>
+                  <Th k="temperature">Temp</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((r, i) => (
+                  <tr key={r.model}>
+                    <td className="q-cell">
+                      {sort === "brier" && i === 0 ? "🏆 " : ""}{r.model}
+                      {!r.calibrated && <span className="dim" title="below CALIBRATION_MIN_N resolved markets — metrics shown, temperature not yet applied"> (provisional)</span>}
+                    </td>
+                    <td>{r.n}</td>
+                    <td>{r.brier.toFixed(3)}</td>
+                    <td>{r.log_loss.toFixed(3)}</td>
+                    <td>{pct(r.accuracy)}</td>
+                    <td style={{ color: r.brier_skill == null ? "var(--muted)" : r.brier_skill >= 0 ? "var(--green)" : "var(--red)" }}>{skill(r.brier_skill)}</td>
+                    <td>{r.temperature.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </main>
+      );
+    }
+
+    function EquityCurve({ curve }) {
+      if (!curve || curve.length === 0) return null;
+      const W = 680, H = 220, PAD = 34;
+      const ys = curve.map((p) => p.cum_pnl);
+      const maxY = Math.max(0, ...ys), minY = Math.min(0, ...ys);
+      const spanY = (maxY - minY) || 1;
+      const n = curve.length;
+      const xx = (i) => PAD + (n <= 1 ? 0 : (i / (n - 1)) * (W - 2 * PAD));
+      const yy = (v) => (H - PAD) - ((v - minY) / spanY) * (H - 2 * PAD);
+      const path = curve.map((p, i) => (i === 0 ? "M" : "L") + xx(i).toFixed(1) + " " + yy(p.cum_pnl).toFixed(1)).join(" ");
+      const last = ys[ys.length - 1];
+      const stroke = last >= 0 ? "var(--green)" : "var(--red)";
+      return (
+        <svg className="reliability" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W }}>
+          <line x1={PAD} y1={yy(0)} x2={W - PAD} y2={yy(0)} stroke="var(--line)" strokeDasharray="4 4" />
+          <path d={path} fill="none" stroke={stroke} strokeWidth="2" />
+          <circle cx={xx(n - 1)} cy={yy(last)} r="3.5" fill={stroke} />
+          <text x={PAD} y={18} className="axis">cumulative realized P&amp;L ($)</text>
+          <text x={W - PAD} y={yy(0) - 4} textAnchor="end" className="axis">$0</text>
+        </svg>
+      );
+    }
+
+    function BreakdownTable({ title, rows }) {
+      if (!rows || rows.length === 0) return null;
+      return (
+        <div className="table-wrap" style={{ flex: 1, minWidth: 240 }}>
+          <table className="scan">
+            <thead><tr><th className="q-cell">{title}</th><th>N</th><th>P&amp;L</th><th>Win rate</th></tr></thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i}>
+                  <td className="q-cell" style={{ textTransform: "capitalize" }}>{r.key}</td>
+                  <td>{r.n}</td>
+                  <td style={{ color: r.pnl >= 0 ? "var(--green)" : "var(--red)" }}>{money(r.pnl)}</td>
+                  <td>{r.win_rate == null ? "—" : pct(r.win_rate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    function PerformanceView() {
+      const [p, setP] = useState(null);
+      const [err, setErr] = useState(null);
+      useEffect(() => { API.getPerformance().then(setP).catch((e) => setErr(e.message)); }, []);
+
+      if (err) return <main><div className="err">{err}</div></main>;
+      if (!p) return <main><div className="empty">Loading…</div></main>;
+      if (p.settled === 0)
+        return <main><div className="empty">No settled signals yet — the track record builds as logged signals resolve ({p.open} open).</div></main>;
+
+      const ret = (x) => (x == null ? "—" : (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%");
+      return (
+        <main>
+          <div className="cal-section">
+            <div className="cal-head">
+              <span className="cal-model">Track record</span>
+              <span className="kv">settled <b>{p.settled}</b></span>
+              <span className="kv">open <b>{p.open}</b></span>
+              <span className="kv">realized P&amp;L <b>{money(p.total_pnl)}</b></span>
+              <span className="kv">return on cost <b>{ret(p.total_return)}</b></span>
+              <span className="kv">win rate <b>{p.win_rate == null ? "—" : pct(p.win_rate)}</b></span>
+              <span className="kv">profit factor <b>{p.profit_factor == null ? "—" : p.profit_factor.toFixed(2)}</b></span>
+              <span className="kv">Sharpe/trade <b>{p.sharpe == null ? "—" : p.sharpe.toFixed(2)}</b></span>
+              <span className="kv">max drawdown <b>{money(p.max_drawdown)}</b></span>
+            </div>
+            <div className="cal-note">
+              Cumulative realized P&amp;L over logged signals (entry order). Cost basis is the modeled
+              VWAP fill; return, Sharpe and drawdown come from settled signals only — open positions
+              aren't counted, so the curve stays lookahead-free.
+            </div>
+            <EquityCurve curve={p.equity_curve} />
+          </div>
+
+          <div className="cal-section">
+            <div className="cal-head"><span className="cal-model">By exchange / side</span></div>
+            <div className="cal-grid">
+              <BreakdownTable title="Exchange" rows={p.by_exchange} />
+              <BreakdownTable title="Side" rows={p.by_side} />
+            </div>
+          </div>
+        </main>
+      );
+    }
+
     function App() {
       const [view, setView] = useState("markets");
       const [markets, setMarkets] = useState([]);
@@ -832,7 +998,9 @@
                 <span className={"tab" + (view === "markets" ? " active" : "")} onClick={() => setView("markets")}>Markets</span>
                 <span className={"tab" + (view === "scan" ? " active" : "")} onClick={() => setView("scan")}>Scan (EV)</span>
                 <span className={"tab" + (view === "signals" ? " active" : "")} onClick={() => setView("signals")}>Signals</span>
+                <span className={"tab" + (view === "performance" ? " active" : "")} onClick={() => setView("performance")}>Performance</span>
                 <span className={"tab" + (view === "calibration" ? " active" : "")} onClick={() => setView("calibration")}>Calibration</span>
+                <span className={"tab" + (view === "leaderboard" ? " active" : "")} onClick={() => setView("leaderboard")}>Leaderboard</span>
               </div>
               {provider && <span className="provider-chip">{provider.provider} · {provider.model}</span>}
             </div>
@@ -853,6 +1021,8 @@
                     refreshing={refreshing} onRefresh={handleRefresh} error={error} />)
             : view === "scan" ? <ScannerView />
             : view === "signals" ? <SignalsView />
+            : view === "performance" ? <PerformanceView />
+            : view === "leaderboard" ? <LeaderboardView />
             : <CalibrationView />}
         </div>
       );

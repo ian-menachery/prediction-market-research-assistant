@@ -55,6 +55,8 @@ Goal: automation, intelligence, and portfolio simulation.
 - [x] Portfolio simulator — `scripts/portfolio_sim.py` (crowd fade-to-0.5 Kelly baseline); own-signal realized P&L shown in the Signals view
 - [x] Backtesting — `scripts/backtest_crowd_calibration.py` (crowd calibration vs outcomes; read-only baseline, not a forward Claude backtest)
 - [x] Multi-model comparison — cross-model adversarial refutation (`CROSS_MODEL_ADVERSARIAL`, `analyzer.refute_edge`); verdict column in the scanner
+- [x] Model leaderboard — per-model LLM eval (Brier / log-loss / accuracy / Brier skill) via `calibration.model_leaderboard`; `/api/leaderboard` + Leaderboard view
+- [x] Signal performance dashboard — equity curve, return-on-cost, per-trade Sharpe, max drawdown via `performance.py`; `/api/performance` + Performance view
 - [x] Webhook notification for high-divergence markets — `scanner.emit_alerts` → `data/alerts.jsonl` + `ALERT_WEBHOOK_URL`; alerts table in the UI
 
 ## Future polish

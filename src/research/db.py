@@ -507,6 +507,18 @@ def get_signals(limit: int = 200) -> list[Signal]:
     return [_row_to_signal(r) for r in rows]
 
 
+def get_resolved_signals() -> list[Signal]:
+    """Settled signals (resolved, P&L set) in entry order (id ASC) — the track-record dataset.
+
+    Ascending order so the performance module can walk them into a cumulative-P&L equity curve.
+    """
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM signals WHERE resolved = 1 AND pnl IS NOT NULL ORDER BY id"
+        ).fetchall()
+    return [_row_to_signal(r) for r in rows]
+
+
 def signal_summary() -> dict:
     """Aggregate counts and realized P&L over all signals (reads only)."""
     with _conn() as conn:
