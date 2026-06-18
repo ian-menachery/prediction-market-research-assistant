@@ -41,7 +41,8 @@ price), **Leaderboard** (per-model Brier / log-loss / Brier skill), and **Perfor
   Sharpe, max drawdown, and win rate (the real calibration flywheel — lookahead-free).
 - **Background automation** — stdlib scheduler (no APScheduler) for periodic scans, resolution
   sweeps, and optional stale re-analysis; high-divergence alerts to a JSONL log + optional webhook.
-- **Single-file web UI** — Flask serves a React (CDN) frontend at `/`: markets, scanner, signals,
+- **No-build web UI** — Flask serves a React (CDN) frontend at `/` — an `index.html` shell plus
+  `frontend/js/` split by area, transformed in-browser (no bundler): markets, scanner, signals,
   performance, calibration, and leaderboard views.
 
 ## Technical highlights
@@ -64,8 +65,8 @@ A few of the more interesting engineering decisions:
 - **Concurrency without async** — a threaded Flask server and a stdlib background scheduler share
   one SQLite file safely via WAL + a busy timeout (no asyncio, no Postgres).
 - **Enforced module boundaries** — HTTP lives only in the exchange clients, SQL only in `db.py`,
-  LLM calls only in `analyzer.py`; routes stay thin. ~3K LOC, type-hinted throughout, with CI
-  (ruff + pytest) on every push.
+  LLM calls only in `analyzer.py`; routes stay thin. ~3K LOC, type-hinted throughout and
+  mypy-clean, gated by CI on every push (see [Quality & CI](#quality--ci)).
 
 ## Stack
 
@@ -84,19 +85,39 @@ make run                  # → http://localhost:5000
 
 | Target | What it does |
 | --- | --- |
-| `make install` / `make install-dev` | runtime deps / dev deps (pytest, ruff, pip-tools) |
+| `make install` / `make install-dev` | runtime deps / dev deps (pytest+cov, ruff, mypy, pre-commit, pip-audit, selenium, pip-tools) |
 | `make run` | start the Flask app on :5000 |
-| `make test` | run the test suite (130+ unit/integration tests) |
-| `make lint` | ruff over `src` + `tests` |
+| `make test` / `make cov` | run the suite (140+ tests) / same with coverage + the fail-under floor |
+| `make lint` / `make typecheck` | ruff / mypy over `src` (+ `tests` for ruff) |
 | `make lock` | regenerate pinned `requirements*.lock` |
+
+## Quality & CI
+
+Every push and PR runs GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+
+- **ruff** — lint (`make lint`).
+- **mypy** — static type checking; the code is fully type-hinted and mypy-clean (`make typecheck`).
+- **pytest + coverage** — 140+ tests with a **55% coverage floor** that fails the build if it drops
+  (`make cov`; config in `pyproject.toml`).
+- **pip-audit** — dependency CVE scan (advisory).
+
+Backed by:
+
+- **Frontend smoke test** — loads the UI in headless Chrome and asserts React actually mounts
+  (skips cleanly when no browser is present), with a companion test that keeps the React/Babel CDN
+  `<script>` tags version-pinned — together they guard against blank-page regressions.
+- **Dependabot** ([`.github/dependabot.yml`](.github/dependabot.yml)) — weekly grouped
+  dependency-update PRs (pip + Actions), each gated by the checks above.
+- **pre-commit** ([`.pre-commit-config.yaml`](.pre-commit-config.yaml)) — runs ruff + mypy before
+  each commit; enable once with `pre-commit install`.
 
 ## Project layout
 
 ```
-src/research/      models · db · polymarket · kalshi · analyzer · scanner · calibration · scheduler · app
-frontend/          single-file React UI served by Flask
+src/research/      models · db · polymarket · kalshi · exchanges · analyzer · scanner · calibration · performance · scheduler · app
+frontend/          no-build React UI — index.html shell + js/ split by area
 scripts/           portfolio sim + crowd-calibration backtest (CLI)
-tests/             pure-logic, DB round-trip, route, and resilience tests
+tests/             pure-logic, DB round-trip, route, resilience + frontend smoke / pinned-CDN tests
 ```
 
 Deeper docs: [`ARCHITECTURE.md`](ARCHITECTURE.md) (data flow + schema),
