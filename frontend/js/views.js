@@ -176,7 +176,8 @@ function MarketsView({ markets, onAnalyzed, refreshing, onRefresh, error }) {
 function ScannerView() {
   const [req, setReq] = useState({
     min_volume_24h: 10000, min_liquidity: 0, min_days_to_close: 7,
-    min_divergence: 0.05, max_age_hours: 24, max_markets: 25, refute_top: 0, category: "",
+    min_divergence: 0.05, max_age_hours: 24, max_markets: 25, refute_top: 0,
+    max_llm_calls: 0, category: "",
   });
   const [results, setResults] = useState(null);
   const [scanning, setScanning] = useState(false);
@@ -215,6 +216,7 @@ function ScannerView() {
     ["max_age_hours", "reuse if analyzed within (h)"],
     ["max_markets", "max markets to fetch"],
     ["refute_top", "refute top N (0 = off)"],
+    ["max_llm_calls", "max LLM calls (0 = no cap)"],
   ];
 
   return (

@@ -5,6 +5,7 @@ them as percentages. Market IDs are always strings. See ARCHITECTURE.md for the
 SQLite schema these models map onto.
 """
 
+import os
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -206,3 +207,10 @@ class ScanRequest(BaseModel):
     min_liquidity: float = Field(default=0.0, ge=0)
     min_days_to_close: float = Field(default=7.0, ge=0)  # below this, annualized EV is noise
     refute_top: int = Field(default=0, ge=0, le=50)  # refute top-N ranked edges (0 = off)
+    # Hard ceiling on fresh LLM calls (market analyses + refutations) for ONE scan, so a single
+    # scan can't burn through the API budget. Reused/cached analyses are free and don't count;
+    # 0 = no cap. Defaults from MAX_LLM_CALLS_PER_SCAN so scheduled scans honor it too; an
+    # explicit value in the request overrides the env default.
+    max_llm_calls: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_LLM_CALLS_PER_SCAN", "0")), ge=0, le=1000
+    )

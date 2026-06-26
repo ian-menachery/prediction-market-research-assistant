@@ -118,17 +118,27 @@ def _passes_pre(m: Market, req: ScanRequest, kalshi_min_volume: float) -> bool:
     )
 
 
-def _analyze_or_reuse(m: Market, max_age_hours: float, delay: float) -> Analysis | None:
-    """Reuse a recent stored analysis (no API cost) or run a fresh one; None on error/skip."""
+def _analyze_or_reuse(
+    m: Market, max_age_hours: float, delay: float, allow_fresh: bool
+) -> tuple[Analysis | None, bool]:
+    """Reuse a recent stored analysis (free) or run a fresh one (one LLM call).
+
+    Returns ``(analysis, made_call)``. A cache hit returns ``(analysis, False)`` — no API cost.
+    When ``allow_fresh`` is False and there's no fresh-enough cache, returns ``(None, False)``
+    without calling the LLM (the per-scan budget is spent). A fresh call that errors returns
+    ``(None, True)`` — it was attempted, so it still counts against the budget.
+    """
     age = db.get_analysis_age_hours(m.id)
     if age is not None and age <= max_age_hours:
-        return db.get_latest_analysis(m.id)  # reuse recent
+        return db.get_latest_analysis(m.id), False  # reuse recent — no API cost
+    if not allow_fresh:
+        return None, False  # per-scan LLM budget exhausted — skip without spending
     analysis = analyzer.analyze_market(m)
     if analysis.error:
-        return None  # don't persist failures; skip
+        return None, True  # call was made (spent) even though it failed; don't persist
     db.save_analysis(analysis)
     time.sleep(delay)
-    return analysis
+    return analysis, True
 
 
 def _pack_result(
@@ -169,20 +179,29 @@ def _refute_top(
     req: ScanRequest,
     recals: dict[str, calibration.Recalibrator],
     delay: float,
-) -> None:
-    """Adversarial second pass over the top-ranked edges (most worth scrutinizing).
+    budget: int,
+    calls_so_far: int,
+) -> int:
+    """Adversarial second pass over the top-ranked edges; returns the LLM calls it made.
 
-    Mutates each result's ``refutation`` in place — flag-only; edges are never dropped.
+    Honors the per-scan ``budget`` (0 = unlimited): stops once the scan's total LLM calls reach
+    it, so refutations share the same spend cap as analyses. Mutates each result's ``refutation``
+    in place — flag-only; edges are never dropped.
     """
+    made = 0
     for r in results[: req.refute_top]:
+        if budget and (calls_so_far + made) >= budget:
+            break  # per-scan LLM budget reached — stop spending on refutations
         if r.calibrated_prob is None:  # packed results always carry one; defensive
             continue
         ref = analyzer.refute_edge(r.market, r.calibrated_prob, original_model=r.analysis.model)
+        made += 1
         time.sleep(delay)
         if ref.error is None and ref.refuter_prob is not None:
             recal = recals.get(r.analysis.model or "") or calibration.identity_recalibrator(r.analysis.model)
             ref.verdict = _refute_verdict(r.side, r.market.market_prob, recal.apply(ref.refuter_prob))
         r.refutation = ref
+    return made
 
 
 def scan(req: ScanRequest) -> list[ScanResult]:
@@ -195,10 +214,14 @@ def scan(req: ScanRequest) -> list[ScanResult]:
     candidates = [m for m in markets if _passes_pre(m, req, kalshi_min_volume)]
     delay = float(os.getenv("ANALYSIS_DELAY_SECONDS", "1.5"))
     target = float(os.getenv("TARGET_POSITION_USD", "50"))  # VWAP fill sizes EV to this
+    budget = req.max_llm_calls  # cap on fresh LLM calls this scan (0 = unlimited); see ScanRequest
+    calls_made = 0
     results: list[ScanResult] = []
 
     for m in candidates:
-        analysis = _analyze_or_reuse(m, req.max_age_hours, delay)
+        allow_fresh = budget == 0 or calls_made < budget
+        analysis, made_call = _analyze_or_reuse(m, req.max_age_hours, delay, allow_fresh)
+        calls_made += int(made_call)
         if analysis is None or analysis.claude_prob is None:
             continue
 
@@ -218,7 +241,12 @@ def scan(req: ScanRequest) -> list[ScanResult]:
             results.append(result)
 
     results.sort(key=lambda r: r.annualized_ev or -1.0, reverse=True)
-    _refute_top(results, req, recals, delay)
+    calls_made += _refute_top(results, req, recals, delay, budget, calls_made)
+    if budget and calls_made >= budget:
+        _log.info(
+            "scan reached the LLM-call cap (max_llm_calls=%d); remaining markets/refutations were "
+            "skipped to bound spend", budget,
+        )
     return results
 
 

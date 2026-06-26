@@ -40,3 +40,18 @@ class TestScanRequestBounds:
             ScanRequest(refute_top=51)
         with pytest.raises(ValidationError):
             ScanRequest(refute_top=-1)
+
+    def test_max_llm_calls_default_is_uncapped(self) -> None:
+        assert ScanRequest().max_llm_calls == 0
+
+    def test_max_llm_calls_bounds(self) -> None:
+        assert ScanRequest(max_llm_calls=20).max_llm_calls == 20
+        with pytest.raises(ValidationError):
+            ScanRequest(max_llm_calls=-1)
+        with pytest.raises(ValidationError):
+            ScanRequest(max_llm_calls=1001)
+
+    def test_max_llm_calls_defaults_from_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("MAX_LLM_CALLS_PER_SCAN", "15")
+        assert ScanRequest().max_llm_calls == 15  # env default
+        assert ScanRequest(max_llm_calls=3).max_llm_calls == 3  # explicit value wins
