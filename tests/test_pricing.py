@@ -24,8 +24,8 @@ class TestCostUsd:
         assert pricing.cost_usd("gpt-5.5", None, None) == 0.0
 
     def test_known_model_math(self) -> None:
-        # gpt-5.5 = (1.25, 10.00)/1M; 1M input + 0.5M output = 1.25 + 5.00 = 6.25.
-        assert pricing.cost_usd("gpt-5.5", 1_000_000, 500_000) == pytest.approx(6.25)
+        # gpt-5.5 = (5.00, 30.00)/1M; 1M input + 0.5M output = 5.00 + 15.00 = 20.00.
+        assert pricing.cost_usd("gpt-5.5", 1_000_000, 500_000) == pytest.approx(20.00)
 
     def test_fallback_model_still_priced(self) -> None:
         ri, ro = pricing.FALLBACK_RATE

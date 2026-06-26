@@ -14,19 +14,25 @@ import logging
 
 _log = logging.getLogger(__name__)
 
-# USD per 1M tokens: (input, output). Approximate public prices — edit to taste.
+# USD per 1M tokens: (input, output). Verified against public pricing 2026-06-19 — re-check when
+# providers change rates or you switch models. Web search adds provider fees this table doesn't model.
 RATES: dict[str, tuple[float, float]] = {
-    "gpt-5.5": (1.25, 10.00),
+    # OpenAI (Responses API list prices)
+    "gpt-5.5": (5.00, 30.00),
     "gpt-5": (1.25, 10.00),
     "gpt-5-mini": (0.25, 2.00),
     "gpt-4.1": (2.00, 8.00),
     "gpt-4o": (2.50, 10.00),
+    # Anthropic (Messages API list prices)
+    "claude-fable-5": (10.00, 50.00),
+    "claude-opus-4-8": (5.00, 25.00),
+    "claude-opus-4-7": (5.00, 25.00),
+    "claude-opus-4-6": (5.00, 25.00),
     "claude-sonnet-4-6": (3.00, 15.00),
-    "claude-opus-4-1": (15.00, 75.00),
+    "claude-haiku-4-5": (1.00, 5.00),
 }
-# Used when a model isn't in RATES (kept deliberately on the higher side so unknown models
-# aren't under-counted). Web search adds provider fees this flat table doesn't model.
-FALLBACK_RATE: tuple[float, float] = (3.00, 15.00)
+# Used when a model isn't in RATES (kept on the higher side so unknown models aren't under-counted).
+FALLBACK_RATE: tuple[float, float] = (5.00, 25.00)
 
 _warned: set[str] = set()
 
