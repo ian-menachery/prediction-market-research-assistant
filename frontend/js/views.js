@@ -181,6 +181,8 @@ function ScannerView() {
   });
   const [results, setResults] = useState(null);
   const [scanning, setScanning] = useState(false);
+  const [estimating, setEstimating] = useState(false);
+  const [est, setEst] = useState(null);  // dry-run cost preview (no API spend)
   const [err, setErr] = useState(null);
   const [cal, setCal] = useState(null);  // the active model's calibration report
 
@@ -194,17 +196,33 @@ function ScannerView() {
 
   const num = (k) => (e) => setReq((r) => ({ ...r, [k]: Number(e.target.value) }));
 
+  function payload() {
+    const p = { ...req };
+    if (!p.category) delete p.category;
+    return p;
+  }
+
   async function run() {
     setScanning(true);
     setErr(null);
     try {
-      const payload = { ...req };
-      if (!payload.category) delete payload.category;
-      setResults(await API.scan(payload));
+      setResults(await API.scan(payload()));
     } catch (e) {
       setErr(e.message);
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function estimate() {
+    setEstimating(true);
+    setErr(null);
+    try {
+      setEst(await API.estimateScan(payload()));
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setEstimating(false);
     }
   }
 
@@ -231,10 +249,24 @@ function ScannerView() {
           <input type="text" value={req.category} placeholder="e.g. Politics"
             onChange={(e) => setReq((r) => ({ ...r, category: e.target.value }))} />
         </label>
+        <button onClick={estimate} disabled={estimating || scanning}>
+          {estimating ? <span className="spinner"></span> : "Estimate (no spend)"}
+        </button>
         <button className="primary" onClick={run} disabled={scanning}>
           {scanning ? <span className="spinner"></span> : "Run scan"}
         </button>
       </div>
+
+      {est && (
+        <div className="meta-line">
+          Estimate: <b>{est.fresh_analyses}</b> fresh {est.fresh_analyses === 1 ? "analysis" : "analyses"}
+          {" "}({est.cached} reused, free){est.refute_max > 0 ? ` + up to ${est.refute_max} refutations` : ""}
+          {est.max_llm_calls > 0 && est.fresh_analyses + est.refute_max > est.max_llm_calls
+            ? ` · capped at ${est.max_llm_calls}` : ""}
+          {" → ~"}<b>{est.estimated_calls}</b> LLM calls ≈ <b>${est.estimated_cost_usd.toFixed(2)}</b>
+          {" "}<span className="dim">(at ${est.cost_per_call_usd}/call · rough; no API spend)</span>
+        </div>
+      )}
 
       <div className="warn">
         ⚠ Each scanned market is a live Claude web-search call (takes seconds + costs API spend).

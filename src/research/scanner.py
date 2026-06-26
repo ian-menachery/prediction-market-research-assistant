@@ -250,6 +250,44 @@ def scan(req: ScanRequest) -> list[ScanResult]:
     return results
 
 
+def estimate_scan(req: ScanRequest) -> dict:
+    """Dry-run preview of a scan's LLM spend — makes NO LLM calls and writes nothing.
+
+    Fetches market data (free) and reads the analysis cache to count how many candidates would
+    need a *fresh* analysis (cache misses) vs. be reused, then applies the same per-scan cap as
+    ``scan()``. The call count is exact; ``estimated_cost_usd`` is a rough ``calls × cost-per-call``
+    using ``COST_PER_LLM_CALL_USD`` (flat — real cost varies by model + web search; token-level
+    costing is a later step). ``refute_max`` is an upper bound (actual refutations are ``<=`` it).
+    """
+    markets = exchanges.fetch_active(req.max_markets)  # market data only — no cost, no DB writes
+    kalshi_min_volume = float(os.getenv("KALSHI_MIN_VOLUME", "5000"))
+    candidates = [m for m in markets if _passes_pre(m, req, kalshi_min_volume)]
+
+    cached = sum(
+        1
+        for m in candidates
+        if (age := db.get_analysis_age_hours(m.id)) is not None and age <= req.max_age_hours
+    )
+    fresh_analyses = len(candidates) - cached
+    refute_max = req.refute_top
+
+    est_calls = fresh_analyses + refute_max
+    if req.max_llm_calls:  # 0 = uncapped
+        est_calls = min(est_calls, req.max_llm_calls)
+
+    cost_per_call = float(os.getenv("COST_PER_LLM_CALL_USD", "0.03"))
+    return {
+        "candidates": len(candidates),
+        "cached": cached,
+        "fresh_analyses": fresh_analyses,
+        "refute_max": refute_max,
+        "max_llm_calls": req.max_llm_calls,
+        "estimated_calls": est_calls,
+        "cost_per_call_usd": cost_per_call,
+        "estimated_cost_usd": round(est_calls * cost_per_call, 2),
+    }
+
+
 def sweep_resolutions() -> int:
     """Record resolutions for analyzed-but-unresolved markets; return the count.
 

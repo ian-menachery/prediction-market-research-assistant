@@ -31,6 +31,16 @@ const API = {
     if (!r.ok) throw new Error(typeof d.error === "string" ? d.error : "Scan failed");
     return d;
   },
+  async estimateScan(params) {
+    const r = await fetch("/api/scan/estimate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(typeof d.error === "string" ? d.error : "Estimate failed");
+    return d;
+  },
   async getCalibration() {
     const r = await fetch("/api/calibration");
     if (!r.ok) throw new Error("Failed to load calibration");

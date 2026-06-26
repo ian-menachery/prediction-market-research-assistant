@@ -192,6 +192,20 @@ def scan() -> Any:
     return jsonify([r.model_dump(mode="json") for r in results])
 
 
+@app.post("/api/scan/estimate")
+def scan_estimate() -> Any:
+    """Dry-run cost preview for the same params as /api/scan — makes no LLM calls, spends nothing."""
+    body = request.get_json(silent=True) or {}
+    try:
+        req = ScanRequest(**body)
+    except ValidationError as e:
+        return jsonify({"error": e.errors()}), 400
+    try:
+        return jsonify(scanner.estimate_scan(req))
+    except Exception as e:  # noqa: BLE001 — surface upstream fetch failures as JSON, not a 500 page
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 502
+
+
 @app.get("/api/calibration")
 def calibration_report() -> Any:
     recals = calibration.build_recalibrators()
