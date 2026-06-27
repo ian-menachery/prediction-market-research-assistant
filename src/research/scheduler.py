@@ -45,33 +45,43 @@ def _build_request() -> ScanRequest:
 
 
 def run_once() -> dict:
-    """Run one scan + resolution sweep, append a JSON log line, return the record.
+    """Advance the batch scan by one step + run the resolution sweep; return the record.
 
-    Never raises: scan and sweep are independently guarded so one failing neither
-    skips the other nor kills the scheduler.
+    The scan is batched (50% cheaper) and turnaround can exceed the scan interval, so this is a small
+    state machine driven once per tick: if a batch is in flight, poll/ingest it (it may still be
+    processing — then we just wait); otherwise submit a new one. Only ingested/submitted/errored ticks
+    write a scan_log line (a "still processing" tick is a quiet no-op). Never raises — scan and sweep
+    are independently guarded. The resolution sweep runs every tick regardless.
     """
     errors: list[str] = []
 
     with _run_lock:  # serialize DB-writing runs (vs. the resolution-sweep timer)
         before = db.count_analyses()
-        edges_found = 0
-        signals_logged = 0
-        alerts_emitted = 0
-        llm_calls = 0
+        edges_found = signals_logged = alerts_emitted = llm_calls = 0
         cost_usd = 0.0
-        cache_read_tokens = 0
-        cache_creation_tokens = 0
+        cache_read_tokens = cache_creation_tokens = 0
+        batch_state = "none"
         try:
-            results, stats = scanner.scan_with_stats(_build_request())
-            edges_found = len(results)
-            llm_calls = int(stats.get("llm_calls", 0))
-            cost_usd = float(stats.get("cost_usd", 0.0))
-            cache_read_tokens = int(stats.get("cache_read_tokens", 0))
-            cache_creation_tokens = int(stats.get("cache_creation_tokens", 0))
-            signals_logged = scanner.persist_signals(results)
-            alerts_emitted = scanner.emit_alerts(results)
+            inflight = db.get_inflight_batch()
+            if inflight:
+                stats = scanner.ingest_batch(inflight["id"])
+                if stats is None:
+                    batch_state = "processing"  # not done yet — wait for a later tick
+                else:
+                    batch_state = "ingested"
+                    edges_found = int(stats.get("edges", 0))
+                    llm_calls = int(stats.get("llm_calls", 0))
+                    cost_usd = float(stats.get("cost_usd", 0.0))
+                    signals_logged = int(stats.get("signals", 0))
+                    alerts_emitted = int(stats.get("alerts", 0))
+                    cache_read_tokens = int(stats.get("cache_read_tokens", 0))
+                    cache_creation_tokens = int(stats.get("cache_creation_tokens", 0))
+            else:
+                batch_id = scanner.submit_batch(_build_request())
+                batch_state = "submitted" if batch_id else "empty"
         except Exception as e:  # noqa: BLE001
             errors.append(f"scan: {type(e).__name__}: {e}")
+            batch_state = "error"
         markets_scanned = max(0, db.count_analyses() - before)
 
         resolutions_captured = 0
@@ -82,6 +92,7 @@ def run_once() -> dict:
 
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "batch_state": batch_state,
         "markets_scanned": markets_scanned,
         "edges_found": edges_found,
         "signals_logged": signals_logged,
@@ -93,17 +104,19 @@ def run_once() -> dict:
         "cache_creation_tokens": cache_creation_tokens,
         "errors": errors,
     }
-    try:
-        path = _scan_log_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record) + "\n")
-    except Exception as e:  # noqa: BLE001 — logging failure must not kill the run
-        _log.warning("scan_log write failed: %s", e)
+    # Quiet ticks (a batch still processing, or nothing to submit) don't pollute the run log.
+    if batch_state in ("submitted", "ingested") or errors:
+        try:
+            path = _scan_log_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record) + "\n")
+        except Exception as e:  # noqa: BLE001 — logging failure must not kill the run
+            _log.warning("scan_log write failed: %s", e)
 
     _log.info(
-        "auto-scan: scanned=%d edges=%d signals=%d alerts=%d resolutions=%d errors=%d",
-        markets_scanned, edges_found, signals_logged, alerts_emitted,
+        "auto-scan: batch=%s scanned=%d edges=%d signals=%d alerts=%d resolutions=%d errors=%d",
+        batch_state, markets_scanned, edges_found, signals_logged, alerts_emitted,
         resolutions_captured, len(errors),
     )
     return record

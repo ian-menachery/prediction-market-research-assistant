@@ -290,8 +290,115 @@ def scan(req: ScanRequest) -> list[ScanResult]:
 
 def scan_with_stats(req: ScanRequest) -> tuple[list[ScanResult], dict]:
     """Like ``scan()`` but also returns run stats — ``{llm_calls, fresh_analyses, refutations,
-    cost_usd}`` — for cost logging (used by the scheduler). ``cost_usd`` is from real token usage."""
+    cost_usd}`` — for cost logging. ``cost_usd`` is from real token usage. (The scheduler now uses the
+    batched path below; this stays for manual/synchronous use.)"""
     return _run_scan(req)
+
+
+# --- Message Batches path (overnight scan; 50% cheaper) ------------------------
+# submit_batch builds one Anthropic batch request per cache-miss candidate; ingest_batch retrieves a
+# finished batch and runs the SAME ranking/persistence path as the synchronous scan. The scheduler
+# drives this as a state machine (one batch in flight at a time). Refutation is not batched (autoscan
+# uses refute_top=0).
+
+
+def build_batch_requests(req: ScanRequest) -> list[dict]:
+    """One ``{custom_id, params}`` request per cache-miss candidate (``custom_id == market.id``).
+
+    Persists fetched markets (FK), applies the same pre-filter and ``max_age_hours`` reuse rule and
+    ``max_llm_calls`` cap as the synchronous scan. Empty list = nothing needs analyzing.
+    """
+    markets = exchanges.fetch_active(req.max_markets)
+    db.upsert_markets(markets)
+    kalshi_min_volume = float(os.getenv("KALSHI_MIN_VOLUME", "5000"))
+    requests: list[dict] = []
+    for m in markets:
+        if req.max_llm_calls and len(requests) >= req.max_llm_calls:
+            break
+        if not _passes_pre(m, req, kalshi_min_volume):
+            continue
+        age = db.get_analysis_age_hours(m.id)
+        if age is not None and age <= req.max_age_hours:
+            continue  # fresh cached analysis — reuse, don't pay to re-analyze
+        requests.append({"custom_id": m.id, "params": analyzer.batch_request_params(m)})
+    return requests
+
+
+def submit_batch(req: ScanRequest) -> str | None:
+    """Build + submit one batch for a scan and persist its id. None if nothing needs analyzing."""
+    requests = build_batch_requests(req)
+    if not requests:
+        _log.info("batch submit skipped — no cache-miss candidates to analyze")
+        return None
+    batch_id = analyzer.submit_batch(requests)
+    db.save_batch(batch_id, len(requests))
+    _log.info("submitted batch %s (%d requests)", batch_id, len(requests))
+    return batch_id
+
+
+def ingest_batch(batch_id: str) -> dict | None:
+    """Poll a batch; if ended, parse results → analyses → rank/persist. None if still processing.
+
+    Joins results back to markets by ``custom_id`` (results are unordered), saves each analysis, then
+    reuses the synchronous ranking/persistence path (``_pack_result`` → ``persist_signals`` →
+    ``emit_alerts``). Cost is the **batch-discounted** (50%) sum over the analyses produced.
+    """
+    if analyzer.batch_status(batch_id) != "ended":
+        return None
+
+    req = ScanRequest()  # default gates (match the scheduler's _build_request)
+    recals = calibration.build_recalibrators()
+    target = float(os.getenv("TARGET_POSITION_USD", "50"))
+    model = analyzer.current_model()
+    cost = 0.0
+    cache_creation = cache_read = 0
+    analyzed: list[Market] = []
+
+    for entry in analyzer.batch_results(batch_id):
+        if getattr(entry.result, "type", None) != "succeeded":
+            continue
+        market = db.get_market(entry.custom_id)
+        if market is None:
+            continue
+        analysis = analyzer.parse_batch_result(entry.result.message, market, model)
+        if analysis.claude_prob is None:
+            continue
+        db.save_analysis(analysis)
+        cost += pricing.cost_usd(
+            analysis.model, analysis.input_tokens, analysis.output_tokens,
+            analysis.cache_creation_input_tokens, analysis.cache_read_input_tokens, batch=True,
+        )
+        cache_creation += analysis.cache_creation_input_tokens or 0
+        cache_read += analysis.cache_read_input_tokens or 0
+        analyzed.append(market)
+
+    results: list[ScanResult] = []
+    for m in analyzed:
+        a = db.get_latest_analysis(m.id)
+        if a is None or a.claude_prob is None:
+            continue
+        recal = recals.get(a.model or "") or calibration.identity_recalibrator(a.model)
+        calibrated_p = recal.apply(a.claude_prob)
+        mp = m.market_prob
+        if mp is None or calibrated_p is None or abs(calibrated_p - mp) < req.min_divergence:
+            continue
+        result = _pack_result(m, a, calibrated_p, req, target)
+        if result is not None:
+            results.append(result)
+
+    results.sort(key=lambda r: r.annualized_ev or -1.0, reverse=True)
+    signals = persist_signals(results)
+    alerts = emit_alerts(results)
+    db.mark_batch_ingested(batch_id)
+    return {
+        "edges": len(results),
+        "llm_calls": len(analyzed),
+        "cost_usd": round(cost, 4),
+        "signals": signals,
+        "alerts": alerts,
+        "cache_creation_tokens": cache_creation,
+        "cache_read_tokens": cache_read,
+    }
 
 
 def estimate_scan(req: ScanRequest) -> dict:

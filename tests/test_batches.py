@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
 from conftest import make_market
 
-from research import analyzer
+from research import analyzer, scanner
+from research.models import Analysis, ScanRequest
 
 
 # --- db batch-state round-trip -------------------------------------------------
@@ -95,3 +97,61 @@ def test_parse_batch_result_stamps_tokens() -> None:
     assert a.claude_prob == 0.55  # parsed from the message's final text block
     assert (a.input_tokens, a.output_tokens) == (800, 200)
     assert a.model == "claude-sonnet-4-6"
+
+
+# --- scanner batch helpers (offline) -------------------------------------------
+
+
+class _Result:
+    """A batch result entry: `.custom_id` + `.result.type`/`.result.message`."""
+
+    def __init__(self, custom_id: str, message: object, rtype: str = "succeeded") -> None:
+        self.custom_id = custom_id
+        self.result = type("R", (), {"type": rtype, "message": message})()
+
+
+def test_build_batch_requests_skips_cache_hits_and_caps(temp_db, monkeypatch) -> None:
+    markets = [make_market(id=f"m{i}", market_prob=0.5) for i in range(5)]
+    monkeypatch.setattr(scanner.exchanges, "fetch_active", lambda max_markets: markets)
+    temp_db.upsert_markets([markets[0]])
+    temp_db.save_analysis(Analysis(market_id="m0", model="x", claude_prob=0.7))  # fresh cache hit
+
+    reqs = scanner.build_batch_requests(ScanRequest(max_markets=5, max_age_hours=24, max_llm_calls=2))
+    ids = [r["custom_id"] for r in reqs]
+    assert "m0" not in ids          # cache hit excluded (no re-spend)
+    assert len(reqs) == 2           # capped at max_llm_calls
+    assert all("params" in r for r in reqs)
+
+
+def test_ingest_batch_joins_saves_and_discounts_cost(temp_db, monkeypatch) -> None:
+    db = temp_db
+    db.upsert_markets([make_market(id="m1", market_prob=0.4), make_market(id="m2", market_prob=0.4)])
+    db.save_batch("batch_1", 2)
+
+    monkeypatch.setattr(scanner.analyzer, "batch_status", lambda bid: "ended")
+    # Results come back UNORDERED — keyed by custom_id.
+    monkeypatch.setattr(scanner.analyzer, "batch_results",
+                        lambda bid: iter([_Result("m2", object()), _Result("m1", object())]))
+    monkeypatch.setattr(scanner.analyzer, "current_model", lambda: "claude-sonnet-4-6")
+    monkeypatch.setattr(scanner.analyzer, "parse_batch_result", lambda msg, m, model: Analysis(
+        market_id=m.id, model=model, claude_prob=0.9, market_prob_at_analysis=0.4,
+        input_tokens=1_000_000, output_tokens=0,
+    ))
+    monkeypatch.setattr(scanner.exchanges, "fetch_book", lambda m: None)
+    monkeypatch.setattr(scanner, "persist_signals", lambda r: 0)
+    monkeypatch.setattr(scanner, "emit_alerts", lambda r: 0)
+
+    stats = scanner.ingest_batch("batch_1")
+    assert stats is not None
+    assert stats["llm_calls"] == 2
+    assert stats["edges"] == 2  # 0.9 vs 0.4 clears the divergence gate for both
+    # 2 * 1M input @ $3/1M (sonnet) = $6.00, halved by the batch discount = $3.00
+    assert stats["cost_usd"] == pytest.approx(3.0)
+    assert db.get_inflight_batch() is None  # marked ingested
+    assert db.get_latest_analysis("m1") is not None
+    assert db.get_latest_analysis("m2") is not None
+
+
+def test_ingest_batch_none_while_processing(temp_db, monkeypatch) -> None:
+    monkeypatch.setattr(scanner.analyzer, "batch_status", lambda bid: "in_progress")
+    assert scanner.ingest_batch("batch_1") is None
