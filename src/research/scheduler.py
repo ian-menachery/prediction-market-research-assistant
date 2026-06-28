@@ -19,7 +19,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from research import db, performance, scanner
+from research import db, kalshi, performance, scanner
 from research.models import ScanRequest
 
 _log = logging.getLogger(__name__)
@@ -37,6 +37,13 @@ def _scan_log_path() -> Path:
     if override:
         return Path(override)
     return Path(__file__).resolve().parents[2] / "data" / "scan_log.jsonl"
+
+
+def _health_log_path() -> Path:
+    override = os.getenv("HEALTH_LOG_PATH")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[2] / "data" / "health.jsonl"
 
 
 def _build_request() -> ScanRequest:
@@ -149,6 +156,31 @@ def run_sweep_once() -> int:
     return resolutions_captured
 
 
+def run_health_check_once() -> dict:
+    """Periodic Kalshi schema/liveness check (heartbeat). Never raises.
+
+    The startup check (app.py) only covers launch; a multi-day unattended run can hit silent schema
+    drift (discovery or order book renamed — has happened twice), which would zero out signals with
+    nobody watching. This runs on the resolution cadence (cheap, no LLM), logs OK/!!!, and appends a
+    heartbeat line to data/health.jsonl so a check-in shows the flywheel is alive AND healthy.
+    """
+    hc = kalshi.health_check()
+    healthy = bool(hc.get("discovery_ok") and hc.get("book_ok"))
+    if healthy:
+        _log.info("kalshi health OK (%d markets)", hc.get("markets_found", 0))
+    else:
+        _log.warning("kalshi health FAILED: %s — signals may be silently empty (schema drift?)", hc)
+    record = {"timestamp": datetime.now(timezone.utc).isoformat(), **hc}
+    try:
+        path = _health_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception as e:  # noqa: BLE001 — logging failure must not kill the run
+        _log.warning("health_log write failed: %s", e)
+    return record
+
+
 def run_stale_reanalysis_once() -> int:
     """Re-analyze stale markets once (no scan), return the count. Never raises.
 
@@ -234,6 +266,7 @@ def _tick() -> None:
 def _resolution_tick() -> None:
     try:
         run_sweep_once()
+        run_health_check_once()  # piggyback the cheap cadence to catch schema drift mid-run
     finally:
         _arm_resolution(_resolution_interval_seconds())
 

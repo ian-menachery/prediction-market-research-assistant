@@ -6,7 +6,7 @@ import pytest
 
 from conftest import make_market
 
-from research import analyzer, kalshi, performance, scanner
+from research import analyzer, kalshi, performance, scanner, scheduler
 from research.models import Analysis, ScanResult
 
 
@@ -179,3 +179,25 @@ class TestHealthCheck:
         self._patch(monkeypatch, book=None)  # book schema broke
         h = kalshi.health_check()
         assert h["discovery_ok"] and not h["book_ok"]
+
+
+class TestPeriodicHealthCheck:
+    def test_failure_warns_and_writes_heartbeat(self, tmp_path, monkeypatch, caplog) -> None:
+        monkeypatch.setenv("HEALTH_LOG_PATH", str(tmp_path / "health.jsonl"))
+        monkeypatch.setattr(scheduler.kalshi, "health_check",
+                            lambda: {"discovery_ok": False, "book_ok": False, "markets_found": 0})
+        with caplog.at_level("WARNING"):
+            rec = scheduler.run_health_check_once()
+        assert rec["discovery_ok"] is False
+        assert (tmp_path / "health.jsonl").read_text(encoding="utf-8").strip()  # heartbeat written
+        assert "health FAILED" in caplog.text
+
+    def test_ok_writes_heartbeat_no_warning(self, tmp_path, monkeypatch, caplog) -> None:
+        monkeypatch.setenv("HEALTH_LOG_PATH", str(tmp_path / "health.jsonl"))
+        monkeypatch.setattr(scheduler.kalshi, "health_check",
+                            lambda: {"discovery_ok": True, "book_ok": True, "markets_found": 9})
+        with caplog.at_level("WARNING"):
+            rec = scheduler.run_health_check_once()
+        assert rec["markets_found"] == 9
+        assert (tmp_path / "health.jsonl").read_text(encoding="utf-8").strip()
+        assert "FAILED" not in caplog.text
