@@ -55,7 +55,7 @@ On this box `python`/`py` aren't on PATH; use `$LOCALAPPDATA/Programs/Python/Pyt
 
 ## Project structure
 ```
-polymarket-claude/
+PMRA/                         ← folder (was polymarket-claude)
 ├── CLAUDE.md                 ← you are here
 ├── ARCHITECTURE.md / ROADMAP.md / API_REFERENCE.md / CALIBRATION_NOTES.md  ← (older docs; partly stale)
 ├── run_copilot.bat           ← launcher for the unattended Scheduled Task
