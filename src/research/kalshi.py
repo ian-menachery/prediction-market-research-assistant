@@ -36,7 +36,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -49,6 +49,18 @@ _log = logging.getLogger(__name__)
 
 DEFAULT_API_HOST = "https://api.elections.kalshi.com"
 API_PREFIX = "/trade-api/v2"
+
+# Default discovery targets: liquid, fast-resolving Kalshi *series* where an LLM + web search
+# plausibly has an edge — weather (read the NWS forecast), econ releases (research-driven), and
+# crypto daily thresholds. The broad /events listing under-surfaces these (it's dominated by
+# long-dated speculative markets), so we query them by series_ticker. Sports game outcomes are
+# deliberately excluded (efficient markets, no LLM edge, huge volume that would crowd everything
+# out). Override via KALSHI_SERIES (comma-separated); set it empty to use /events discovery.
+DEFAULT_KALSHI_SERIES = (
+    "KXHIGHNY,KXHIGHCHI,KXHIGHLAX,KXHIGHMIA,KXHIGHAUS,"  # daily city high temps
+    "KXCPIYOY,KXPAYROLLS,KXFEDDECISION,"                  # econ releases
+    "KXBTCD,KXETHD"                                       # crypto daily thresholds
+)
 
 # Kalshi sometimes emits bare timezone offsets (e.g. `+00` instead of `+00:00`),
 # which datetime.fromisoformat rejects — same gotcha handled in polymarket.py.
@@ -401,25 +413,56 @@ def fetch_markets(
     return [m for m in (normalize_market(raw) for raw in raw_markets) if m is not None]
 
 
+def _fetch_by_series(series_tickers: list[str], max_markets: int, min_volume: float) -> list[Market]:
+    """Discover markets by querying each liquid ``series_ticker`` directly (see DEFAULT_KALSHI_SERIES).
+
+    The broad ``/events`` listing under-surfaces fast-resolving recurring markets (weather, econ,
+    crypto daily), so we hit ``/markets?series_ticker=...`` per series. Eligibility (MVE/two-sided/
+    price) + the ``min_volume`` floor still apply. Results are sorted by close date ascending so the
+    near-dated markets survive the ``max_markets`` truncation — they're the flywheel fuel.
+    """
+    markets: list[Market] = []
+    with KalshiClient() as client:
+        for st in series_tickers:
+            cursor: str | None = None
+            pages = 0
+            while pages < 5:  # plenty: a series rarely spans >5 pages of open markets
+                params: dict[str, Any] = {"limit": 1000, "status": "open", "series_ticker": st}
+                if cursor:
+                    params["cursor"] = cursor
+                body = client.get("/markets", **params) or {}
+                raw = body.get("markets") or []
+                markets.extend(
+                    m for m in (normalize_market(r) for r in raw)
+                    if m is not None and (m.volume_total or 0.0) >= min_volume
+                )
+                cursor = body.get("cursor") or ""
+                pages += 1
+                if not cursor:
+                    break
+    # Near-dated first (None end_date sorts last) so the truncation keeps fast-resolving markets.
+    markets.sort(key=lambda m: m.end_date or datetime.max.replace(tzinfo=timezone.utc))
+    return markets[:max_markets]
+
+
 def fetch_all_active(
     max_markets: int = 500, min_volume: float = 1000.0, max_pages: int = 20
 ) -> list[Market]:
-    """Paginate active markets via ``/events``, keeping only real trading activity.
+    """Active Kalshi markets — by curated series (default) or the broad ``/events`` listing.
 
-    Cursor-paged (unlike Polymarket's offset paging): each page returns the cursor for
-    the next, and an empty cursor marks the end.
+    Discovery defaults to ``KALSHI_SERIES`` (``DEFAULT_KALSHI_SERIES``) via ``_fetch_by_series``,
+    because the raw ``/markets`` listing is ~99% MVE parlays and ``/events`` under-surfaces the
+    fast-resolving recurring markets we want. Set ``KALSHI_SERIES`` empty to fall back to ``/events``
+    discovery (below). Either way ``_is_eligible_binary`` drops MVE/one-sided stragglers and only
+    markets whose lifetime ``volume_total`` clears ``min_volume`` are kept. (24h volume isn't usable:
+    Kalshi reports it as 0 for every market.)
 
-    Discovery goes through the events endpoint (see ``_fetch_events_page``) because the
-    raw ``/markets`` listing is ~99% auto-generated MVE parlay markets that bury the real
-    ones. ``_is_eligible_binary`` then drops any MVE/one-sided stragglers, and we keep
-    only markets whose **lifetime** volume (``volume_total``) clears ``min_volume``. (24h
-    volume isn't usable: Kalshi reports it as 0 for every market, so lifetime volume is
-    the only populated liquidity signal.)
-
-    Bounded three ways — ``max_markets`` eligible found, cursor exhausted, or ``max_pages``
-    fetched — so a scan stays responsive even when liquid markets are sparse. Hitting the
-    page cap is logged (never a silent truncation).
+    Bounded three ways — ``max_markets`` eligible found, cursor exhausted, or ``max_pages`` fetched.
     """
+    series = [s.strip() for s in os.getenv("KALSHI_SERIES", DEFAULT_KALSHI_SERIES).split(",") if s.strip()]
+    if series:
+        return _fetch_by_series(series, max_markets, min_volume)
+
     limit = 200  # Kalshi /events allows up to 200/page
     markets: list[Market] = []
     cursor: str | None = None

@@ -111,7 +111,9 @@ class TestEventsDiscovery:
         assert [m["ticker"] for m in raw_markets] == ["A", "B", "C"]
         assert cursor == "next"
 
-    def test_fetch_all_active_filters_mve_and_volume(self, monkeypatch) -> None:
+    def test_events_fallback_filters_mve_and_volume(self, monkeypatch) -> None:
+        # KALSHI_SERIES empty -> fall back to /events discovery.
+        monkeypatch.setenv("KALSHI_SERIES", "")
         body = {
             "events": [
                 {
@@ -128,3 +130,19 @@ class TestEventsDiscovery:
         monkeypatch.setattr(kalshi, "KalshiClient", lambda *a, **k: _FakeClient(body))
         out = kalshi.fetch_all_active(max_markets=50, min_volume=5000.0, max_pages=3)
         assert [m.id for m in out] == ["GOOD"]
+
+    def test_series_discovery_filters_and_sorts_by_close(self, monkeypatch) -> None:
+        # One series; the fake returns a /markets-shaped body. Near-dated sorts first; MVE/low-vol dropped.
+        monkeypatch.setenv("KALSHI_SERIES", "KXTEST")
+        body = {
+            "markets": [
+                _raw(ticker="FAR", volume_fp="9000", close_time="2030-01-01T00:00:00Z"),
+                _raw(ticker="NEAR", volume_fp="9000", close_time="2026-07-01T00:00:00Z"),
+                _raw(ticker="LOWVOL", volume_fp="100", close_time="2026-07-01T00:00:00Z"),
+                _raw(ticker="KXMVE-X", mve_collection_ticker="C", volume_fp="9000"),
+            ],
+            "cursor": "",
+        }
+        monkeypatch.setattr(kalshi, "KalshiClient", lambda *a, **k: _FakeClient(body))
+        out = kalshi.fetch_all_active(max_markets=50, min_volume=5000.0)
+        assert [m.id for m in out] == ["NEAR", "FAR"]  # near-dated first, MVE + low-vol dropped
