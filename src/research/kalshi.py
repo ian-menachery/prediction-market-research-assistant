@@ -14,13 +14,18 @@ Pydantic model with gotcha-safe validators → binary filter → ``fetch_markets
   read-only tool never calls. Optional signing scaffolding is included so a future
   trading use — or higher rate limits — can opt in via ``KALSHI_API_KEY`` +
   ``KALSHI_KEY_FILE`` (needs the ``cryptography`` package).
-- **Prices are integer cents** (1–99), e.g. ``last_price=65`` → ``0.65`` — not the
-  JSON-string decimals Polymarket returns, so no JSON-string array parsing.
-- **Natively binary** — one YES/NO contract per market, so eligibility is a simple
-  status/price check, not Polymarket's outcomes/negRisk handling.
-- **No CLOB token id** — ``yes_token_id`` is always ``None`` for Kalshi, so the
-  scanner's order-book/VWAP step is skipped and Kalshi edges price at the mid
-  (``executable=False``). A by-ticker order-book fetch is left for future work.
+- **Decimal-dollar prices.** The live ``api.elections.kalshi.com`` schema reports
+  prices as decimal dollars in the ``*_dollars`` fields (already 0–1), so no
+  JSON-string array parsing and no cents scaling for the market list. (The *order
+  book* endpoint still returns integer cents — scaled in ``_orderbook_side``.)
+- **Natively binary** — one YES/NO contract per market, so eligibility is a status /
+  two-sided-quote / price check, not Polymarket's outcomes/negRisk handling.
+- **No CLOB token id** — ``yes_token_id`` is always ``None``; the order book is fetched
+  by ticker (``fetch_book`` → ``/markets/{ticker}/orderbook``) instead, so Kalshi edges
+  price off the live book and VWAP fill just like Polymarket.
+- **Discovery via /events, not /markets.** The raw ``/markets`` listing is ~99%
+  auto-generated MVE parlay markets; ``fetch_all_active`` discovers through ``/events``
+  (with nested markets) and ``_is_eligible_binary`` drops MVE/one-sided stragglers.
 - **Cursor pagination** (a ``cursor`` token per page), not offset-based.
 """
 
@@ -148,6 +153,12 @@ class KalshiMarket(BaseModel):
     ticker: str
     event_ticker: str = ""
     market_type: str = ""
+    # MVE = "multivariate event": Kalshi auto-generates huge numbers of provisional
+    # multi-leg parlay markets (e.g. KXMVESPORTSMULTIGAMEEXTENDED). They carry these
+    # fields, have no live two-sided quote, and flood the /markets listing — we exclude
+    # them in _is_eligible_binary so the scanner only sees real single-event markets.
+    mve_collection_ticker: str = ""
+    mve_selected_legs: list[Any] = []
     title: str = ""
     subtitle: str = ""
     yes_sub_title: str = ""
@@ -193,15 +204,36 @@ def _market_prob(km: KalshiMarket) -> float | None:
     return None
 
 
-def _is_eligible_binary(km: KalshiMarket) -> bool:
-    """Keep tradeable binary markets with a usable live price.
+def _is_mve(km: KalshiMarket) -> bool:
+    """True for auto-generated multivariate-event (parlay) markets — see KalshiMarket."""
+    return bool(km.mve_selected_legs) or bool(km.mve_collection_ticker) or km.ticker.startswith("KXMVE")
 
-    Kalshi markets are natively YES/NO; we only exclude non-binary (scalar) types,
-    non-tradeable statuses, and markets with no parseable price.
+
+def _has_two_sided_quote(km: KalshiMarket) -> bool:
+    """True only if both YES bid and ask sit strictly inside (0, 1).
+
+    Kalshi uses 0/1 as no-bid / no-ask sentinels, so a one-sided book shows up as
+    bid=0 or ask=1. Requiring both inside (0, 1) keeps only markets with a live,
+    two-sided market — which is also what an executable forward signal needs.
+    """
+    bid, ask = km.yes_bid_dollars, km.yes_ask_dollars
+    return bid is not None and ask is not None and 0 < bid < 1 and 0 < ask < 1
+
+
+def _is_eligible_binary(km: KalshiMarket) -> bool:
+    """Keep real, tradeable binary markets with a live two-sided quote.
+
+    Excludes non-binary (scalar) types, non-tradeable statuses, auto-generated MVE
+    parlay markets (which flood the listing and have no real book), and markets with
+    no parseable price or no two-sided quote.
     """
     if km.status.lower() not in _ACTIVE_STATUSES:
         return False
     if km.market_type and km.market_type.lower() != "binary":
+        return False
+    if _is_mve(km):
+        return False
+    if not _has_two_sided_quote(km):
         return False
     return _market_prob(km) is not None
 
@@ -210,8 +242,9 @@ def normalize_market(raw: dict) -> Market | None:
     """Validate + map a raw Kalshi row to our ``Market``; None if not eligible.
 
     The Polymarket counterpart records ``float(outcomePrices[0])``; here the YES price
-    comes from cents (last trade or bid/ask mid). ``yes_token_id`` is always None — Kalshi
-    has no CLOB token — so the scanner prices Kalshi edges at the mid.
+    comes from the decimal-dollar fields (last trade or bid/ask mid). ``yes_token_id`` is
+    always None — Kalshi has no CLOB token — but the scanner still prices off the live
+    book via ``fetch_book`` (by ticker), not the mid.
     """
     km = KalshiMarket.model_validate(raw)
     if not _is_eligible_binary(km):
@@ -322,6 +355,27 @@ def _fetch_page(
     return body.get("markets") or [], body.get("cursor") or ""
 
 
+def _fetch_events_page(
+    client: KalshiClient, limit: int, cursor: str | None
+) -> tuple[list[dict], str]:
+    """Fetch one page of open *events* with their nested markets flattened out.
+
+    Discovery goes through ``/events`` (not ``/markets``) on purpose: the raw
+    ``/markets`` listing is overwhelmingly auto-generated MVE parlay markets, which bury
+    the real single-event markets past any sane page budget. ``/events`` groups the real
+    markets and keeps the MVE collections out of the way, so flattening their nested
+    markets surfaces genuine, liquid markets directly. ``next_cursor`` is the empty
+    string on the last page (Kalshi's end-of-pages signal).
+    """
+    params: dict[str, Any] = {"limit": limit, "status": "open", "with_nested_markets": True}
+    if cursor:
+        params["cursor"] = cursor
+    body = client.get("/events", **params) or {}
+    events = body.get("events") or []
+    raw_markets = [m for e in events for m in (e.get("markets") or [])]
+    return raw_markets, body.get("cursor") or ""
+
+
 def fetch_markets(
     limit: int = 100, cursor: str | None = None, status: str = "open"
 ) -> list[Market]:
@@ -334,32 +388,33 @@ def fetch_markets(
 def fetch_all_active(
     max_markets: int = 500, min_volume: float = 1000.0, max_pages: int = 20
 ) -> list[Market]:
-    """Paginate active markets, keeping only those with real trading activity.
+    """Paginate active markets via ``/events``, keeping only real trading activity.
 
     Cursor-paged (unlike Polymarket's offset paging): each page returns the cursor for
     the next, and an empty cursor marks the end.
 
-    Kalshi's ``/markets`` has no server-side volume sort, so its early pages are
-    dominated by auto-generated, zero-activity parlay markets. We therefore keep only
-    markets whose **lifetime** volume (``volume_total``) clears ``min_volume`` and keep
-    paging past the dead ones. (24h volume isn't usable: GetMarkets reports it as 0 for
-    every market, so lifetime volume is the only populated liquidity signal.)
+    Discovery goes through the events endpoint (see ``_fetch_events_page``) because the
+    raw ``/markets`` listing is ~99% auto-generated MVE parlay markets that bury the real
+    ones. ``_is_eligible_binary`` then drops any MVE/one-sided stragglers, and we keep
+    only markets whose **lifetime** volume (``volume_total``) clears ``min_volume``. (24h
+    volume isn't usable: Kalshi reports it as 0 for every market, so lifetime volume is
+    the only populated liquidity signal.)
 
     Bounded three ways — ``max_markets`` eligible found, cursor exhausted, or ``max_pages``
     fetched — so a scan stays responsive even when liquid markets are sparse. Hitting the
     page cap is logged (never a silent truncation).
     """
-    limit = 1000  # Kalshi allows up to 1000/page
+    limit = 200  # Kalshi /events allows up to 200/page
     markets: list[Market] = []
     cursor: str | None = None
     pages = 0
     raw_seen = 0
     with KalshiClient() as client:
         while len(markets) < max_markets and pages < max_pages:
-            raw_markets, cursor = _fetch_page(client, limit=limit, cursor=cursor, status="open")
+            raw_markets, cursor = _fetch_events_page(client, limit=limit, cursor=cursor)
             pages += 1
             raw_seen += len(raw_markets)
-            if not raw_markets:
+            if not raw_markets and not cursor:
                 break
             markets.extend(
                 m

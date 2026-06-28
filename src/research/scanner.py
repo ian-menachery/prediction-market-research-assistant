@@ -114,6 +114,7 @@ def _passes_pre(m: Market, req: ScanRequest, kalshi_min_volume: float) -> bool:
         and (m.liquidity or 0.0) >= req.min_liquidity
         and dtc is not None
         and dtc >= req.min_days_to_close
+        and (req.max_days_to_close <= 0 or dtc <= req.max_days_to_close)
         and (req.category is None or req.category in m.tags)
     )
 

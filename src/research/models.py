@@ -216,6 +216,9 @@ class ScanRequest(BaseModel):
     max_markets: int = Field(default=100, ge=1, le=1000)
     min_liquidity: float = Field(default=0.0, ge=0)
     min_days_to_close: float = Field(default=7.0, ge=0)  # below this, annualized EV is noise
+    # Upper bound on days-to-close (0 = no cap). Biases a scan toward near-dated markets so
+    # resolved (estimate, outcome) pairs accrue quickly — useful while building calibration.
+    max_days_to_close: float = Field(default=0.0, ge=0)
     refute_top: int = Field(default=0, ge=0, le=50)  # refute top-N ranked edges (0 = off)
     # Hard ceiling on fresh LLM calls (market analyses + refutations) for ONE scan, so a single
     # scan can't burn through the API budget. Reused/cached analyses are free and don't count;
