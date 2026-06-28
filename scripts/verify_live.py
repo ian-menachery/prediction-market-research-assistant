@@ -47,6 +47,7 @@ def main() -> None:
     cost = pricing.cost_usd(
         a.model, a.input_tokens, a.output_tokens,
         a.cache_creation_input_tokens, a.cache_read_input_tokens,
+        web_search_requests=a.web_search_requests,
     )
     cr = a.cache_read_input_tokens or 0
     print("=" * 60)
@@ -56,7 +57,8 @@ def main() -> None:
     print(f"output_tokens : {a.output_tokens}")
     print(f"cache_read    : {cr}")
     print(f"cache_create  : {a.cache_creation_input_tokens or 0}")
-    print(f"cost_usd      : ${cost:.4f}")
+    print(f"web_searches  : {a.web_search_requests or 0}")
+    print(f"cost_usd      : ${cost:.4f}  (tokens + web-search fee)")
     print("=" * 60)
     print("cache ENGAGED" if cr > 0
           else "no cache reads — expected at the current ~300-token prefix (Phase 1 prediction holds)")

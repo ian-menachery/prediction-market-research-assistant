@@ -34,6 +34,11 @@ RATES: dict[str, tuple[float, float]] = {
 # Used when a model isn't in RATES (kept on the higher side so unknown models aren't under-counted).
 FALLBACK_RATE: tuple[float, float] = (5.00, 25.00)
 
+# Server-side web_search tool fee: $10 per 1,000 searches = $0.01 per search, billed on TOP of
+# tokens (Anthropic + OpenAI both charge a per-search fee). Captured separately because it's not a
+# token cost — without it, reported per-analysis cost undercounts real spend by the search fee.
+WEB_SEARCH_FEE_USD: float = 0.01
+
 _warned: set[str] = set()
 
 
@@ -55,13 +60,16 @@ def cost_usd(
     cache_creation_tokens: int | None = 0,
     cache_read_tokens: int | None = 0,
     batch: bool = False,
+    web_search_requests: int | None = 0,
 ) -> float:
     """Rough USD cost of one call given its token usage. 0.0 when usage is missing/zero.
 
     Anthropic prompt caching (5-min TTL): a cache **write** costs 1.25x the input rate, a cache
     **read** costs 0.1x. ``input_tokens`` is already the uncached remainder, so the three input
     components are additive. The cache args default to 0, so OpenAI calls and older 2-arg callers
-    are unaffected. ``batch=True`` applies the Message Batches API's 50% discount to the whole total.
+    are unaffected. ``batch=True`` applies the Message Batches API's 50% discount to the **token**
+    cost. ``web_search_requests`` adds the per-search tool fee (``WEB_SEARCH_FEE_USD`` each) on top
+    — a tool fee, not a token cost, so the batch discount does NOT apply to it.
     """
     rate_in, rate_out = rate_for(model)
     it = input_tokens or 0
@@ -69,5 +77,7 @@ def cost_usd(
     cc = cache_creation_tokens or 0
     cr = cache_read_tokens or 0
     input_cost = it * rate_in + cc * rate_in * 1.25 + cr * rate_in * 0.1
-    total = (input_cost + ot * rate_out) / 1_000_000.0
-    return total * 0.5 if batch else total
+    token_total = (input_cost + ot * rate_out) / 1_000_000.0
+    if batch:
+        token_total *= 0.5
+    return token_total + (web_search_requests or 0) * WEB_SEARCH_FEE_USD

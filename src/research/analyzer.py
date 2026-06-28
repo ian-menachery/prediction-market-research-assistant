@@ -254,10 +254,13 @@ def _parse_analysis(text: str, market: Market, model: str) -> Analysis:
 
 @dataclass(frozen=True)
 class Completion:
-    """One LLM completion: the text plus the token usage that produced it (for cost accounting).
+    """One LLM completion: the text plus the usage that produced it (for cost accounting).
 
-    ``cache_*`` fields track Anthropic prompt-cache usage; they're 0 on OpenAI (no caching there)
-    and on Anthropic calls where the cached prefix is below the model's minimum (so it never engages).
+    ``cache_*`` fields track Anthropic prompt-cache usage (0 on OpenAI, which has no caching). They
+    are typically NON-zero on real web-search calls: the ``pause_turn`` loop re-sends the prior
+    turn's large ``web_search_tool_result`` blocks, so that context is cached (write @1.25x) and
+    read back (@0.1x) across continuations. ``web_search_requests`` counts server-side searches,
+    which are billed a per-search fee on top of tokens (see ``pricing.cost_usd``).
     """
 
     text: str
@@ -265,6 +268,7 @@ class Completion:
     output_tokens: int
     cache_creation_input_tokens: int = 0
     cache_read_input_tokens: int = 0
+    web_search_requests: int = 0
 
 
 def _usage_tokens(response: Any) -> tuple[int, int, int, int]:
@@ -286,6 +290,18 @@ def _usage_tokens(response: Any) -> tuple[int, int, int, int]:
     )
 
 
+def _web_search_count(response: Any) -> int:
+    """Number of server-side web_search calls in a response (0 if absent).
+
+    Anthropic reports these under ``usage.server_tool_use.web_search_requests``; each is billed a
+    per-search fee on top of tokens (priced in ``pricing.cost_usd``), so we capture it for honest
+    cost accounting. Read defensively — OpenAI / older responses lack the field.
+    """
+    u = getattr(response, "usage", None)
+    st = getattr(u, "server_tool_use", None) if u is not None else None
+    return int(getattr(st, "web_search_requests", 0) or 0) if st is not None else 0
+
+
 def _last_text(response: Any) -> str:
     """The final answer text block — web_search emits server_tool_use / web_search_tool_result
     blocks (and the final text may carry citations) before it; we want the last ``text`` block."""
@@ -303,8 +319,10 @@ def _anthropic_message_params(system: str, messages: list[dict]) -> dict:
     Used by BOTH the synchronous ``_anthropic_complete`` and the batch builder, so a batched
     analysis is byte-identical to a live one (the model behaves the same — important for keeping the
     new model's calibration baseline consistent). The static ``system`` prompt is a cache_control
-    block; with tools + system rendering before messages, the breakpoint caches that whole prefix
-    (a no-op below Sonnet 4.6's ~2048-token minimum — see _anthropic_complete logging).
+    block; with tools + system rendering before messages, the breakpoint can cache that prefix. In
+    practice caching engages mostly *within* a call: the web-search pause_turn loop re-sends large
+    web_search_tool_result blocks that get cached and read back across continuations (see
+    _anthropic_complete — cache_read is routinely tens of thousands of tokens on real searches).
     """
     return {
         "model": os.getenv("ANALYSIS_MODEL", ANTHROPIC_DEFAULT_MODEL),
@@ -318,8 +336,9 @@ def _anthropic_message_params(system: str, messages: list[dict]) -> dict:
 def _anthropic_complete(system: str, user: str) -> Completion:
     """Anthropic messages.create with web search, 429 backoff, and pause_turn resume.
 
-    cache_* token usage is summed across continuations and logged (it reads 0 today — the ~300-token
-    prefix is below Sonnet 4.6's ~2048 cache minimum).
+    cache_* and web_search usage are summed across pause_turn continuations and logged. cache_read
+    is typically >0 on real searches: each continuation re-sends the prior turn's large
+    web_search_tool_result blocks, which are read from cache (@0.1x) rather than re-billed at full.
     """
     def create(messages: list[dict]) -> Any:
         for attempt in range(_MAX_RETRIES):
@@ -338,6 +357,7 @@ def _anthropic_complete(system: str, user: str) -> Completion:
     messages: list[dict] = [{"role": "user", "content": user}]
     response = create(messages)
     in_tok, out_tok, cc_tok, cr_tok = _usage_tokens(response)  # summed across pause_turn continuations
+    ws_tok = _web_search_count(response)
     continuations = 0
     while response.stop_reason == "pause_turn" and continuations < _MAX_PAUSE_CONTINUATIONS:
         messages = [
@@ -350,13 +370,14 @@ def _anthropic_complete(system: str, user: str) -> Completion:
         out_tok += o
         cc_tok += cc
         cr_tok += cr
+        ws_tok += _web_search_count(response)
         continuations += 1
-    # Log the four counts so cache behavior is observed, not assumed (cache_read>0 => cache hit).
+    # Log the counts so cache + search behavior is observed, not assumed (cache_read>0 => cache hit).
     _log.info(
-        "anthropic call: input=%d output=%d cache_read=%d cache_creation=%d",
-        in_tok, out_tok, cr_tok, cc_tok,
+        "anthropic call: input=%d output=%d cache_read=%d cache_creation=%d web_searches=%d",
+        in_tok, out_tok, cr_tok, cc_tok, ws_tok,
     )
-    return Completion(_last_text(response), in_tok, out_tok, cc_tok, cr_tok)
+    return Completion(_last_text(response), in_tok, out_tok, cc_tok, cr_tok, ws_tok)
 
 
 def _openai_complete(system: str, user: str) -> Completion:
@@ -421,6 +442,7 @@ def analyze_market(market: Market) -> Analysis:
         analysis.output_tokens = comp.output_tokens
         analysis.cache_creation_input_tokens = comp.cache_creation_input_tokens
         analysis.cache_read_input_tokens = comp.cache_read_input_tokens
+        analysis.web_search_requests = comp.web_search_requests
         return analysis
     except Exception as e:  # noqa: BLE001 — scanner needs graceful degradation
         return Analysis(market_id=market.id, model=model, error=_provider_error(e))
@@ -497,6 +519,7 @@ def refute_edge(market: Market, claimed_prob: float, original_model: str | None 
             output_tokens=comp.output_tokens,
             cache_creation_input_tokens=comp.cache_creation_input_tokens,
             cache_read_input_tokens=comp.cache_read_input_tokens,
+            web_search_requests=comp.web_search_requests,
         )
     except Exception as e:  # noqa: BLE001 — a failed refutation shouldn't kill the scan
         return Refutation(error=_provider_error(e), refuter_model=model)
@@ -537,4 +560,5 @@ def parse_batch_result(message: Any, market: Market, model: str) -> Analysis:
     analysis.output_tokens = out_tok
     analysis.cache_creation_input_tokens = cc_tok
     analysis.cache_read_input_tokens = cr_tok
+    analysis.web_search_requests = _web_search_count(message)
     return analysis

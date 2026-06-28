@@ -41,7 +41,10 @@ class TestScanRequestBounds:
         with pytest.raises(ValidationError):
             ScanRequest(refute_top=-1)
 
-    def test_max_llm_calls_default_is_uncapped(self) -> None:
+    def test_max_llm_calls_default_is_uncapped(self, monkeypatch) -> None:
+        # Hermetic: the default reads MAX_LLM_CALLS_PER_SCAN, which a local .env (loaded via
+        # load_dotenv during the session) may set. Clear it so the test asserts the code default.
+        monkeypatch.delenv("MAX_LLM_CALLS_PER_SCAN", raising=False)
         assert ScanRequest().max_llm_calls == 0
 
     def test_max_llm_calls_bounds(self) -> None:

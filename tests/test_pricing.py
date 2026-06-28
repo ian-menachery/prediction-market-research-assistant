@@ -46,3 +46,16 @@ class TestCostUsd:
         assert pricing.cost_usd("claude-sonnet-4-6", 1_000_000, 1_000_000, batch=True) == pytest.approx(
             full * 0.5
         )
+
+    def test_web_search_fee_added_on_top(self) -> None:
+        # 5 searches @ $0.01 add $0.05 over the token cost.
+        tokens_only = pricing.cost_usd("claude-sonnet-4-6", 1000, 500)
+        with_search = pricing.cost_usd("claude-sonnet-4-6", 1000, 500, web_search_requests=5)
+        assert with_search - tokens_only == pytest.approx(5 * pricing.WEB_SEARCH_FEE_USD)
+
+    def test_batch_discount_does_not_apply_to_search_fee(self) -> None:
+        # The 50% batch discount halves TOKENS only; the per-search tool fee is charged in full.
+        tokens = pricing.cost_usd("claude-sonnet-4-6", 1_000_000, 1_000_000)
+        fee = 4 * pricing.WEB_SEARCH_FEE_USD
+        got = pricing.cost_usd("claude-sonnet-4-6", 1_000_000, 1_000_000, batch=True, web_search_requests=4)
+        assert got == pytest.approx(tokens * 0.5 + fee)

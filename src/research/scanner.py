@@ -234,6 +234,7 @@ def _run_scan(req: ScanRequest) -> tuple[list[ScanResult], dict]:
                 cost += pricing.cost_usd(
                     analysis.model, analysis.input_tokens, analysis.output_tokens,
                     analysis.cache_creation_input_tokens, analysis.cache_read_input_tokens,
+                    web_search_requests=analysis.web_search_requests,
                 )
                 cache_creation += analysis.cache_creation_input_tokens or 0
                 cache_read += analysis.cache_read_input_tokens or 0
@@ -263,6 +264,7 @@ def _run_scan(req: ScanRequest) -> tuple[list[ScanResult], dict]:
             cost += pricing.cost_usd(
                 ref.refuter_model, ref.input_tokens, ref.output_tokens,
                 ref.cache_creation_input_tokens, ref.cache_read_input_tokens,
+                web_search_requests=ref.web_search_requests,
             )
             cache_creation += ref.cache_creation_input_tokens or 0
             cache_read += ref.cache_read_input_tokens or 0
@@ -367,6 +369,7 @@ def ingest_batch(batch_id: str) -> dict | None:
         cost += pricing.cost_usd(
             analysis.model, analysis.input_tokens, analysis.output_tokens,
             analysis.cache_creation_input_tokens, analysis.cache_read_input_tokens, batch=True,
+            web_search_requests=analysis.web_search_requests,
         )
         cache_creation += analysis.cache_creation_input_tokens or 0
         cache_read += analysis.cache_read_input_tokens or 0
@@ -430,7 +433,8 @@ def estimate_scan(req: ScanRequest) -> dict:
     model = analyzer.current_model()
     est_in = int(os.getenv("EST_INPUT_TOKENS", "1500"))
     est_out = int(os.getenv("EST_OUTPUT_TOKENS", "700"))
-    cost_per_call = pricing.cost_usd(model, est_in, est_out)
+    est_searches = int(os.getenv("EST_WEB_SEARCHES", "3"))  # assumed server-side searches per call
+    cost_per_call = pricing.cost_usd(model, est_in, est_out, web_search_requests=est_searches)
     return {
         "candidates": len(candidates),
         "cached": cached,

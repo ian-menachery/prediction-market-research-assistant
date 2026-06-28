@@ -59,6 +59,11 @@ class _FakeOAIClient:
         return self._resp
 
 
+class _ServerToolUse:
+    def __init__(self, n: int) -> None:
+        self.web_search_requests = n
+
+
 _JSON = '{"probability": 60, "confidence": "high", "summary": "s", "factors": ["a"]}'
 
 
@@ -96,6 +101,35 @@ def test_analyze_market_stamps_tokens(monkeypatch) -> None:
     a = analyzer.analyze_market(make_market(market_prob=0.4))
     assert a.error is None
     assert (a.input_tokens, a.output_tokens) == (123, 45)
+
+
+def test_web_search_count_extracted() -> None:
+    r = _AnthResp(_JSON, 10, 5)
+    r.usage.server_tool_use = _ServerToolUse(3)
+    assert analyzer._web_search_count(r) == 3
+
+
+def test_web_search_count_absent_is_zero() -> None:
+    assert analyzer._web_search_count(_AnthResp(_JSON, 10, 5)) == 0  # no server_tool_use attr
+    assert analyzer._web_search_count(object()) == 0  # no usage at all
+
+
+def test_anthropic_sums_web_searches_across_pause_turn(monkeypatch) -> None:
+    r1 = _AnthResp("", 10, 5, stop="pause_turn")
+    r1.usage.server_tool_use = _ServerToolUse(2)
+    r2 = _AnthResp(_JSON, 20, 7)
+    r2.usage.server_tool_use = _ServerToolUse(1)
+    client = _FakeAnthClient([r1, r2])  # single instance so the response iterator persists
+    monkeypatch.setattr(analyzer, "_get_client", lambda: client)
+    comp = analyzer._anthropic_complete("sys", "user")
+    assert comp.web_search_requests == 3  # summed across both rounds
+
+
+def test_analyze_market_stamps_web_searches(monkeypatch) -> None:
+    # Completion(text, input, output, cache_creation, cache_read, web_search_requests)
+    monkeypatch.setattr(analyzer, "_complete", lambda *a, **k: analyzer.Completion(_JSON, 1, 1, 0, 0, 4))
+    a = analyzer.analyze_market(make_market(market_prob=0.4))
+    assert a.web_search_requests == 4
 
 
 def test_refute_edge_stamps_tokens(monkeypatch) -> None:

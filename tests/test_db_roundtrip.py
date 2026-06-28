@@ -50,6 +50,7 @@ def test_analysis_token_usage_roundtrip(temp_db) -> None:
         market_id=m.id, model="test-model", claude_prob=0.6,
         input_tokens=1234, output_tokens=567,
         cache_creation_input_tokens=200, cache_read_input_tokens=1800,
+        web_search_requests=5,
     ))
     latest = db.get_latest_analysis(m.id)
     assert latest is not None
@@ -57,6 +58,7 @@ def test_analysis_token_usage_roundtrip(temp_db) -> None:
     assert latest.output_tokens == 567
     assert latest.cache_creation_input_tokens == 200
     assert latest.cache_read_input_tokens == 1800
+    assert latest.web_search_requests == 5
 
 
 def test_analysis_history_newest_first(temp_db) -> None:

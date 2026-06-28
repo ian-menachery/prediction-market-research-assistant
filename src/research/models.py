@@ -79,6 +79,7 @@ class Analysis(BaseModel):
     output_tokens: int | None = None
     cache_creation_input_tokens: int | None = None  # Anthropic prompt-cache write/read (0 if no cache)
     cache_read_input_tokens: int | None = None
+    web_search_requests: int | None = None  # server-side web_search calls (billed per-search, not in tokens)
 
 
 class MarketWithAnalysis(BaseModel):
@@ -108,6 +109,7 @@ class Refutation(BaseModel):
     output_tokens: int | None = None
     cache_creation_input_tokens: int | None = None  # Anthropic prompt-cache write/read (0 if no cache)
     cache_read_input_tokens: int | None = None
+    web_search_requests: int | None = None  # server-side web_search calls (billed per-search, not in tokens)
 
 
 class ScanResult(BaseModel):
