@@ -1,4 +1,4 @@
-# Prediction-Market Research Copilot — CLAUDE.md
+# PMRA — Prediction Market Research Assistant (CLAUDE.md)
 
 ## Working agreement on planning
 

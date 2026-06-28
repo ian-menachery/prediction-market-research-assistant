@@ -46,7 +46,7 @@ function App() {
     <div>
       <header>
         <div className="header-row">
-          <h1>Polymarket Research Copilot <small>Claude vs. the market</small></h1>
+          <h1>PMRA <small>Prediction Market Research Assistant</small></h1>
           <div className="tabs">
             <span className={"tab" + (view === "markets" ? " active" : "")} onClick={() => setView("markets")}>Markets</span>
             <span className={"tab" + (view === "scan" ? " active" : "")} onClick={() => setView("scan")}>Scan (EV)</span>
