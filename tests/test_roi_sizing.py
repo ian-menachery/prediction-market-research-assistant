@@ -48,6 +48,20 @@ class TestRecommendedStake:
         monkeypatch.setenv("BANKROLL_USD", "200")
         assert scanner.recommended_stake_usd(_sig(kelly=kelly)) == 0.0
 
+    def test_extreme_divergence_withholds_stake(self, monkeypatch) -> None:
+        monkeypatch.setenv("BANKROLL_USD", "200")
+        monkeypatch.setenv("KELLY_FRACTION", "0.25")
+        monkeypatch.setenv("EXTREME_DIVERGENCE", "0.40")
+        # 92% vs 7% mid = 85pp gap -> likely a misread -> no auto-stake, even with positive kelly.
+        s = _sig(kelly=0.5, calibrated_prob=0.92, market_prob=0.07)
+        assert scanner.is_extreme_divergence(s) is True
+        assert scanner.recommended_stake_usd(s) == 0.0
+
+    def test_normal_divergence_not_flagged(self, monkeypatch) -> None:
+        monkeypatch.setenv("EXTREME_DIVERGENCE", "0.40")
+        s = _sig(kelly=0.2, calibrated_prob=0.60, market_prob=0.50)  # 10pp
+        assert scanner.is_extreme_divergence(s) is False
+
 
 class TestRecordFill:
     def test_round_trip(self, temp_db) -> None:

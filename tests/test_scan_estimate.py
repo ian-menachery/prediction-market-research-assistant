@@ -29,7 +29,7 @@ def _setup(monkeypatch, n_markets: int) -> dict:
 
 def test_estimate_makes_no_llm_calls(temp_db, monkeypatch) -> None:
     calls = _setup(monkeypatch, n_markets=5)
-    est = scanner.estimate_scan(ScanRequest(max_markets=5))
+    est = scanner.estimate_scan(ScanRequest(max_markets=5, refute_top=0))
     assert calls["n"] == 0, "estimate must never call the LLM"
     assert est["candidates"] == 5
     assert est["fresh_analyses"] == 5  # cold cache → all would be analyzed
@@ -41,7 +41,7 @@ def test_estimate_counts_cached_as_free(temp_db, monkeypatch) -> None:
     calls = _setup(monkeypatch, n_markets=4)
     scanner.scan(ScanRequest(max_markets=4, max_llm_calls=0))  # warm the cache (4 real calls)
     assert calls["n"] == 4
-    est = scanner.estimate_scan(ScanRequest(max_markets=4, max_age_hours=24))
+    est = scanner.estimate_scan(ScanRequest(max_markets=4, max_age_hours=24, refute_top=0))
     assert calls["n"] == 4, "estimate added no calls"
     assert est["cached"] == 4
     assert est["fresh_analyses"] == 0
@@ -65,7 +65,7 @@ def test_estimate_cost_is_model_priced(temp_db, monkeypatch) -> None:
     monkeypatch.setenv("EST_INPUT_TOKENS", "1000000")  # 1M input @ $3/1M = $3.00/call
     monkeypatch.setenv("EST_OUTPUT_TOKENS", "0")
     monkeypatch.setenv("EST_WEB_SEARCHES", "0")  # isolate token pricing here
-    est = scanner.estimate_scan(ScanRequest(max_markets=2))
+    est = scanner.estimate_scan(ScanRequest(max_markets=2, refute_top=0))
     assert est["model"] == "claude-sonnet-4-6"
     assert est["cost_per_call_usd"] == pytest.approx(3.0)
     assert est["estimated_cost_usd"] == pytest.approx(6.0)  # 2 calls

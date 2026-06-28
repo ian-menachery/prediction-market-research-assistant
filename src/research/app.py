@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory
 from pydantic import ValidationError
 
-from research import analyzer, calibration, db, exchanges, performance, scanner, scheduler
+from research import analyzer, calibration, db, exchanges, kalshi, performance, scanner, scheduler
 from research.models import Analysis, CalibrationReport, Market, MarketWithAnalysis, ScanRequest
 
 _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
@@ -104,7 +104,8 @@ def frontend_js(filename: str) -> Any:
 
 @app.get("/api/health")
 def health() -> Any:
-    return jsonify({"status": "ok"})
+    """Liveness + Kalshi schema-drift check (discovery / order book / resolution)."""
+    return jsonify({"status": "ok", "kalshi": kalshi.health_check()})
 
 
 @app.get("/api/markets")
@@ -247,10 +248,20 @@ def signals() -> Any:
     return jsonify({
         "summary": db.signal_summary(),
         "signals": [
-            {**s.model_dump(mode="json"), "recommended_stake_usd": scanner.recommended_stake_usd(s)}
+            {
+                **s.model_dump(mode="json"),
+                "recommended_stake_usd": scanner.recommended_stake_usd(s),
+                "extreme_divergence": scanner.is_extreme_divergence(s),
+            }
             for s in db.get_signals()
         ],
     })
+
+
+@app.get("/api/divergence-review")
+def divergence_review() -> Any:
+    """Extreme-divergence signals + the model's reasoning — diagnose why misreads happened."""
+    return jsonify(performance.divergence_review())
 
 
 @app.post("/api/signals/<int:signal_id>/fill")
@@ -353,5 +364,11 @@ if __name__ == "__main__":
     # Start the background auto-scan only when run as the server (never on import),
     # so tests/scripts/test_client don't spawn live scans. (scheduler is imported at
     # module top, but start() is called only here.)
+    # Startup schema-drift check: warn loudly if Kalshi discovery/book broke (it has twice).
+    hc = kalshi.health_check()
+    if not (hc["discovery_ok"] and hc["book_ok"]):
+        _log.warning("Kalshi health check FAILED at startup: %s — signals may be silently empty", hc)
+    else:
+        _log.info("Kalshi health check OK (%d markets, book+resolution reachable)", hc["markets_found"])
     scheduler.start()
     app.run(host="127.0.0.1", port=5000)

@@ -234,7 +234,9 @@ class ScanRequest(BaseModel):
     max_days_to_close: float = Field(
         default_factory=lambda: float(os.getenv("SCAN_MAX_DAYS_TO_CLOSE", "0")), ge=0
     )
-    refute_top: int = Field(default=0, ge=0, le=50)  # refute top-N ranked edges (0 = off)
+    # Refute top-N ranked edges (0 = off). Defaults from REFUTE_TOP so manual and scheduled scans
+    # pressure-test consistently; an explicit request value overrides.
+    refute_top: int = Field(default_factory=lambda: int(os.getenv("REFUTE_TOP", "0")), ge=0, le=50)
     # Hard ceiling on fresh LLM calls (market analyses + refutations) for ONE scan, so a single
     # scan can't burn through the API budget. Reused/cached analyses are free and don't count;
     # 0 = no cap. Defaults from MAX_LLM_CALLS_PER_SCAN so scheduled scans honor it too; an

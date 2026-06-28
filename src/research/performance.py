@@ -10,10 +10,27 @@ count is surfaced, so the track record stays lookahead-free.
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Callable
 
 from research import db, pricing
 from research.models import Signal
+
+
+def _category_of(market_id: str) -> str:
+    """Coarse category from a Kalshi ticker's series prefix — for per-category P&L breakdown.
+
+    Tells you which kinds of markets actually make money (weather vs econ vs crypto), which feeds
+    the discovery weighting / down-weight decisions. Unknown prefixes fall through to "other".
+    """
+    p = market_id.split("-", 1)[0].upper()
+    if p.startswith("KXHIGH"):
+        return "weather"
+    if p.startswith(("KXBTC", "KXETH")):
+        return "crypto"
+    if any(p.startswith(e) for e in ("KXCPI", "KXPAYROLL", "KXFED", "KXGDP", "KXINITIAL", "KXJOBS")):
+        return "econ"
+    return "other"
 
 
 def _cost_basis(s: Signal) -> float:
@@ -81,7 +98,7 @@ def _empty(open_count: int) -> dict:
         "wins": 0, "losses": 0, "win_rate": None,
         "avg_win": None, "avg_loss": None, "profit_factor": None,
         "sharpe": None, "max_drawdown": 0.0,
-        "equity_curve": [], "by_exchange": [], "by_side": [],
+        "equity_curve": [], "by_exchange": [], "by_side": [], "by_category": [],
     }
 
 
@@ -131,6 +148,7 @@ def build_report(signals: list[Signal], open_count: int = 0) -> dict:
         "equity_curve": curve,
         "by_exchange": _breakdown(settled, lambda s: s.exchange),
         "by_side": _breakdown(settled, lambda s: s.side),
+        "by_category": _breakdown(settled, lambda s: _category_of(s.market_id)),
     }
 
 
@@ -154,6 +172,35 @@ def total_credit_spend() -> float:
             web_search_requests=r["web_search_requests"],
         )
     return total
+
+
+def divergence_review(threshold: float | None = None) -> list[dict]:
+    """Extreme-divergence signals joined with the model's reasoning — the "why did it diverge?" loop.
+
+    Surfaces signals whose |our YES prob − market mid| ≥ ``threshold`` (env ``EXTREME_DIVERGENCE``,
+    default 0.40) with the analysis reasoning (summary/factors/confidence) + refutation verdict +
+    outcome once resolved. Reviewing these — especially resolved-and-LOST ones — reveals recurring
+    model mistakes (e.g. misread thresholds/dates) to fix in the analyzer prompt. Reads only.
+    """
+    thr = threshold if threshold is not None else float(os.getenv("EXTREME_DIVERGENCE", "0.40"))
+    out: list[dict] = []
+    for s in db.get_signals(limit=500):
+        div = abs(s.calibrated_prob - s.market_prob)
+        if div < thr:
+            continue
+        a = db.get_latest_analysis(s.market_id)
+        out.append({
+            "id": s.id, "question": s.question, "exchange": s.exchange, "side": s.side,
+            "our_prob": s.calibrated_prob, "market_prob": s.market_prob, "divergence": round(div, 4),
+            "ev": s.ev, "model": s.model,
+            "verdict": s.adversarial_verdict, "refuter_model": s.refuter_model,
+            "resolved": s.resolved, "resolution": s.resolution, "pnl": s.pnl,
+            "confidence": a.confidence if a else None,
+            "summary": a.summary if a else None,
+            "factors": a.factors if a else None,
+        })
+    out.sort(key=lambda x: x["divergence"], reverse=True)
+    return out
 
 
 def roi() -> dict:

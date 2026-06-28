@@ -5,10 +5,14 @@ from __future__ import annotations
 from conftest import make_market
 
 
-def test_health(client) -> None:
+def test_health(client, monkeypatch) -> None:
+    # Patch the live Kalshi check so this stays network-free.
+    from research import kalshi
+    monkeypatch.setattr(kalshi, "health_check", lambda: {"discovery_ok": True, "book_ok": True})
     r = client.get("/api/health")
     assert r.status_code == 200
     assert r.get_json()["status"] == "ok"
+    assert r.get_json()["kalshi"]["book_ok"] is True
 
 
 def test_markets_empty_list(client) -> None:

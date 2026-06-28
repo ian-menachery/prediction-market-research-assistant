@@ -519,11 +519,13 @@ function FillCell({ g, onFilled }) {
 function SignalsView() {
   const [data, setData] = useState(null);
   const [roi, setRoi] = useState(null);
+  const [review, setReview] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [err, setErr] = useState(null);
   const load = () => {
     API.getSignals().then(setData).catch((e) => setErr(e.message));
     API.getRoi().then(setRoi).catch(() => {});
+    API.getDivergenceReview().then(setReview).catch(() => {});
   };
   useEffect(load, []);
   // Alerts are best-effort — a failure here must never break the signals view.
@@ -589,7 +591,9 @@ function SignalsView() {
                     <td>{pct(g.market_prob)}</td>
                     <td>{pct(g.price_paid)}</td>
                     <td>{pct1(g.ev_pct)}</td>
-                    <td>{!g.resolved && g.recommended_stake_usd > 0 ? <b>{money2(g.recommended_stake_usd)}</b> : "—"}</td>
+                    <td>{g.resolved ? "—"
+                      : g.extreme_divergence ? <span className="down" title="Implausibly large gap — likely a model misread. See the review panel below before betting.">⚠ review</span>
+                      : g.recommended_stake_usd > 0 ? <b>{money2(g.recommended_stake_usd)}</b> : "—"}</td>
                     <td>{!g.resolved && <a href={tradeUrl(g.market_id, g.exchange)} target="_blank" rel="noopener noreferrer">Trade ↗</a>}</td>
                     <td>{g.resolved ? "—" : <FillCell g={g} onFilled={load} />}</td>
                     <td>{g.adversarial_verdict
@@ -607,6 +611,49 @@ function SignalsView() {
           </div>
         )}
       </div>
+
+      {review.length > 0 && (
+        <div className="cal-section">
+          <div className="cal-head">
+            <span className="cal-model">⚠ Extreme divergences — review</span>
+            <span className="kv">{review.length} flagged</span>
+          </div>
+          <div className="cal-note">
+            Gaps this large are usually a model misread (wrong threshold/date, stale data), not a real
+            edge — auto-stake is withheld. Read the reasoning; once resolved, the <b>lost</b> ones show
+            recurring mistakes to fix in the prompt.
+          </div>
+          <div className="table-wrap">
+            <table className="scan">
+              <thead>
+                <tr>
+                  <th className="q-cell">Market</th><th>Side</th><th>Our</th><th>Mid</th><th>Gap</th>
+                  <th>Refute</th><th>Outcome</th><th className="q-cell">Model reasoning</th>
+                </tr>
+              </thead>
+              <tbody>
+                {review.map((d) => (
+                  <tr key={d.id}>
+                    <td className="q-cell">{d.question}</td>
+                    <td>{d.side && <span className={"side " + d.side.toLowerCase()}>{d.side}</span>}</td>
+                    <td>{pct(d.our_prob)}</td>
+                    <td>{pct(d.market_prob)}</td>
+                    <td className="down"><b>{Math.round(d.divergence * 100)}pp</b></td>
+                    <td>{d.verdict
+                      ? <span className={d.verdict === "holds" ? "v-holds" : "v-refuted"}>{d.verdict}</span>
+                      : "—"}</td>
+                    <td>{d.resolved
+                      ? <span className={"side " + ((d.pnl ?? 0) > 0 ? "yes" : "no")}>{(d.pnl ?? 0) > 0 ? "won" : "lost"}</span>
+                      : <span className="dim">open</span>}</td>
+                    <td className="q-cell" title={(d.factors || []).join(" · ")}>
+                      <span className="dim">{d.confidence ? `[${d.confidence}] ` : ""}</span>{d.summary || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="cal-section">
         <div className="cal-head"><span className="cal-model">Recent alerts</span></div>
@@ -787,8 +834,9 @@ function PerformanceView() {
       </div>
 
       <div className="cal-section">
-        <div className="cal-head"><span className="cal-model">By exchange / side</span></div>
+        <div className="cal-head"><span className="cal-model">By category / exchange / side</span></div>
         <div className="cal-grid">
+          <BreakdownTable title="Category" rows={p.by_category} />
           <BreakdownTable title="Exchange" rows={p.by_exchange} />
           <BreakdownTable title="Side" rows={p.by_side} />
         </div>

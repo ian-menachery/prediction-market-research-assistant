@@ -54,7 +54,7 @@ def test_scan_with_stats_accumulates_real_cost(temp_db, monkeypatch) -> None:
         market_prob_at_analysis=0.5, input_tokens=1_000_000, output_tokens=0,
         cache_read_input_tokens=1_000_000,  # 1M cache read @ 0.1x of $3/1M = $0.30 per call
     ))
-    _results, stats = scanner.scan_with_stats(ScanRequest(max_markets=3))
+    _results, stats = scanner.scan_with_stats(ScanRequest(max_markets=3, refute_top=0))
     assert stats["fresh_analyses"] == 3
     assert stats["llm_calls"] == 3
     # per call: 1M input @$3 = $3.00 + 1M cache_read @0.3 = $0.30 -> $3.30; x3 = $9.90.

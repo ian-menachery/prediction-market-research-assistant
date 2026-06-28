@@ -19,7 +19,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from research import db, scanner
+from research import db, performance, scanner
 from research.models import ScanRequest
 
 _log = logging.getLogger(__name__)
@@ -40,9 +40,9 @@ def _scan_log_path() -> Path:
 
 
 def _build_request() -> ScanRequest:
-    # The gate defaults (volume / days-to-close / max LLM calls) read from env inside
-    # ScanRequest, so manual and scheduled scans share them. No refutation on autoscan
-    # (refute_top=0) to bound cost.
+    # All gate defaults (volume / days-to-close / max LLM calls / REFUTE_TOP) read from env inside
+    # ScanRequest, so manual and scheduled scans share them. REFUTE_TOP turns on adversarial
+    # refutation of the top edges; _refute_top shares the max_llm_calls budget, so spend stays bounded.
     return ScanRequest(max_markets=int(os.getenv("MAX_SCAN_MARKETS", "100")))
 
 
@@ -79,8 +79,15 @@ def run_once() -> dict:
                     cache_read_tokens = int(stats.get("cache_read_tokens", 0))
                     cache_creation_tokens = int(stats.get("cache_creation_tokens", 0))
             else:
-                batch_id = scanner.submit_batch(_build_request())
-                batch_state = "submitted" if batch_id else "empty"
+                cap = float(os.getenv("SPEND_CAP_USD", "0"))
+                if cap > 0 and performance.total_credit_spend() >= cap:
+                    batch_state = "spend_capped"
+                    _log.warning(
+                        "scan skipped: cumulative LLM spend has reached SPEND_CAP_USD=%.2f", cap
+                    )
+                else:
+                    batch_id = scanner.submit_batch(_build_request())
+                    batch_state = "submitted" if batch_id else "empty"
         except Exception as e:  # noqa: BLE001
             errors.append(f"scan: {type(e).__name__}: {e}")
             batch_state = "error"
@@ -107,7 +114,7 @@ def run_once() -> dict:
         "errors": errors,
     }
     # Quiet ticks (a batch still processing, or nothing to submit) don't pollute the run log.
-    if batch_state in ("submitted", "ingested") or errors:
+    if batch_state in ("submitted", "ingested", "spend_capped") or errors:
         try:
             path = _scan_log_path()
             path.parent.mkdir(parents=True, exist_ok=True)

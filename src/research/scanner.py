@@ -81,6 +81,15 @@ def _ev_fields(
             "price_paid": price_paid, "executable": executable}
 
 
+def is_extreme_divergence(sig: Signal) -> bool:
+    """Flag an implausibly large gap (|our YES prob − market mid| ≥ ``EXTREME_DIVERGENCE``, default
+    0.40). At that size it's usually a model misread (wrong threshold/date, stale data) rather than a
+    real edge, so auto-stake is withheld and the signal is routed to the divergence-review panel for
+    diagnosis. Compared in YES space (``calibrated_prob`` and ``market_prob`` are both YES)."""
+    thr = float(os.getenv("EXTREME_DIVERGENCE", "0.40"))
+    return abs(sig.calibrated_prob - sig.market_prob) >= thr
+
+
 def recommended_stake_usd(sig: Signal) -> float:
     """Conservative manual-trade stake (USD) for a signal, from fractional Kelly.
 
@@ -94,6 +103,8 @@ def recommended_stake_usd(sig: Signal) -> float:
     kelly = sig.kelly or 0.0
     if kelly <= 0:
         return 0.0
+    if is_extreme_divergence(sig):
+        return 0.0  # withhold auto-stake — verify the misread in the divergence-review panel first
     bankroll = float(os.getenv("BANKROLL_USD", "200"))
     fraction = float(os.getenv("KELLY_FRACTION", "0.25"))
     depth_cap = sig.fill_shares * sig.price_paid  # max $ the book filled at the modeled VWAP
@@ -508,17 +519,33 @@ def sweep_resolutions() -> int:
     return resolved
 
 
+def _tradeable_exchanges() -> set[str]:
+    """Exchanges the tool is configured to act on (``EXCHANGE``: kalshi | polymarket | both).
+
+    The single guard that keeps automatic LLM spend on markets we can actually trade — e.g. a
+    US user sets ``EXCHANGE=kalshi`` and never pays to (re)analyze untradeable Polymarket markets,
+    even though old Polymarket rows linger in the DB.
+    """
+    ex = os.getenv("EXCHANGE", "polymarket").strip().lower()
+    return {"polymarket", "kalshi"} if ex == "both" else {ex}
+
+
 def reanalyze_stale() -> int:
     """Re-analyze markets whose price drifted past the stale threshold; return the count.
 
     Stale = ``db.is_stale`` flagged (current price moved > ``STALE_THRESHOLD`` since the
-    latest analysis). Bounded by ``STALE_REANALYZE_MAX`` (default 20) so one run can't blow
-    the LLM budget; the cap being hit is logged (never a silent truncation). Failed analyses
-    aren't persisted (graceful — matches ``scan``).
+    latest analysis). Restricted to the tradeable exchange(s) so we never spend re-analyzing
+    untradeable markets (e.g. lingering Polymarket rows when ``EXCHANGE=kalshi``). Bounded by
+    ``STALE_REANALYZE_MAX`` (default 20) so one run can't blow the LLM budget; the cap being hit
+    is logged (never a silent truncation). Failed analyses aren't persisted (graceful — matches ``scan``).
     """
     cap = int(os.getenv("STALE_REANALYZE_MAX", "20"))
     delay = float(os.getenv("ANALYSIS_DELAY_SECONDS", "1.5"))
-    stale = [mwa.market for mwa in db.get_markets_with_latest_analysis() if mwa.stale]
+    allowed = _tradeable_exchanges()
+    stale = [
+        mwa.market for mwa in db.get_markets_with_latest_analysis()
+        if mwa.stale and mwa.market.exchange in allowed
+    ]
     reanalyzed = 0
     for m in stale[:cap]:
         analysis = analyzer.analyze_market(m)
@@ -541,6 +568,7 @@ def persist_signals(results: list[ScanResult]) -> int:
     Prices/EV are frozen here; realized P&L is filled in by ``sweep_resolutions``.
     """
     min_ev = float(os.getenv("SIGNAL_MIN_EV", "0.0"))
+    min_depth = float(os.getenv("MIN_BOOK_DEPTH_USD", "20"))
     open_keys = db.get_open_signal_keys()
     saved = 0
     for r in results:
@@ -553,6 +581,10 @@ def persist_signals(results: list[ScanResult]) -> int:
             and r.price_paid is not None and r.fill_shares is not None
             and r.target_position_usd is not None
         )
+        # Liquidity guard: only log if the book actually filled enough USD on the chosen side at
+        # the modeled VWAP — no signals on markets too thin to trade (factor real depth in).
+        if r.fill_shares * r.price_paid < min_depth:
+            continue
         key = (r.market.id, r.side)
         if key in open_keys:
             continue

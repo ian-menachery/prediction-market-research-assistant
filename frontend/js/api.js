@@ -91,6 +91,11 @@ const API = {
     if (!r.ok) throw new Error("Failed to load ROI");
     return r.json();
   },
+  async getDivergenceReview() {
+    const r = await fetch("/api/divergence-review");
+    if (!r.ok) throw new Error("Failed to load divergence review");
+    return r.json();
+  },
   async recordFill(id, body) {
     const r = await fetch(`/api/signals/${id}/fill`, {
       method: "POST",

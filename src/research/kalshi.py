@@ -413,14 +413,26 @@ def fetch_markets(
     return [m for m in (normalize_market(raw) for raw in raw_markets) if m is not None]
 
 
+def _series_of(ticker: str) -> str:
+    """The series prefix of a Kalshi market ticker (e.g. ``KXHIGHNY-26JUN28-T84`` -> ``KXHIGHNY``)."""
+    return ticker.split("-", 1)[0]
+
+
 def _fetch_by_series(series_tickers: list[str], max_markets: int, min_volume: float) -> list[Market]:
     """Discover markets by querying each liquid ``series_ticker`` directly (see DEFAULT_KALSHI_SERIES).
 
     The broad ``/events`` listing under-surfaces fast-resolving recurring markets (weather, econ,
     crypto daily), so we hit ``/markets?series_ticker=...`` per series. Eligibility (MVE/two-sided/
-    price) + the ``min_volume`` floor still apply. Results are sorted by close date ascending so the
-    near-dated markets survive the ``max_markets`` truncation — they're the flywheel fuel.
+    price) + the ``min_volume`` floor still apply.
+
+    Results are ranked so the scan's scarce LLM budget hits the best markets first:
+    **(series priority, volume desc, close-date asc)**. Series priority is the ticker's position in
+    ``series_tickers`` — that list is ordered weather -> econ -> crypto, so weather/econ rank ahead of
+    crypto-daily (which is kept but down-weighted) and survive the ``max_markets`` truncation; volume
+    breaks ties so liquid markets (better fills) come first.
     """
+    priority = {st: i for i, st in enumerate(series_tickers)}
+    far = datetime.max.replace(tzinfo=timezone.utc)
     markets: list[Market] = []
     with KalshiClient() as client:
         for st in series_tickers:
@@ -440,8 +452,11 @@ def _fetch_by_series(series_tickers: list[str], max_markets: int, min_volume: fl
                 pages += 1
                 if not cursor:
                     break
-    # Near-dated first (None end_date sorts last) so the truncation keeps fast-resolving markets.
-    markets.sort(key=lambda m: m.end_date or datetime.max.replace(tzinfo=timezone.utc))
+    markets.sort(key=lambda m: (
+        priority.get(_series_of(m.id), len(series_tickers)),  # weather/econ before crypto
+        -(m.volume_total or 0.0),                              # liquid first (factor volume in)
+        m.end_date or far,                                     # near-dated first
+    ))
     return markets[:max_markets]
 
 
@@ -490,3 +505,29 @@ def fetch_all_active(
                     max_pages, raw_seen, pages, len(markets), min_volume, max_markets,
                 )
     return markets[:max_markets]
+
+
+def health_check() -> dict:
+    """Liveness + schema check against the live Kalshi API — catches silent schema drift.
+
+    We've been bitten twice by Kalshi renaming fields (discovery, then the order book) which
+    silently zeroed signals. This exercises the three real paths (discover → fetch a book →
+    fetch a resolution) and returns booleans + counts; it never raises (failures become False),
+    so a caller can log/alert. ``book_ok`` and ``discovery_ok`` are the meaningful drift signals.
+    """
+    out: dict[str, Any] = {
+        "discovery_ok": False, "book_ok": False, "resolution_ok": False,
+        "markets_found": 0, "error": None,
+    }
+    try:
+        markets = fetch_all_active(max_markets=10, min_volume=1000.0)
+        out["markets_found"] = len(markets)
+        out["discovery_ok"] = len(markets) > 0
+        if markets:
+            book = next((b for b in (fetch_book(m.id) for m in markets[:5]) if b is not None), None)
+            out["book_ok"] = book is not None
+            fetch_resolution(markets[0].id)  # parses without raising (None for open is fine)
+            out["resolution_ok"] = True
+    except Exception as e:  # noqa: BLE001 — health check must never raise
+        out["error"] = f"{type(e).__name__}: {e}"
+    return out

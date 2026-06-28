@@ -146,3 +146,33 @@ class TestEventsDiscovery:
         monkeypatch.setattr(kalshi, "KalshiClient", lambda *a, **k: _FakeClient(body))
         out = kalshi.fetch_all_active(max_markets=50, min_volume=5000.0)
         assert [m.id for m in out] == ["NEAR", "FAR"]  # near-dated first, MVE + low-vol dropped
+
+    def test_series_priority_outranks_volume_and_recency(self, monkeypatch) -> None:
+        # Weather (listed first) must outrank crypto even though crypto has huge volume + closes sooner.
+        monkeypatch.setenv("KALSHI_SERIES", "KXHIGHNY,KXBTCD")
+        markets = [
+            _raw(ticker="KXBTCD-1", volume_fp="999999", close_time="2026-07-01T00:00:00Z"),
+            _raw(ticker="KXHIGHNY-1", volume_fp="6000", close_time="2026-07-02T00:00:00Z"),
+        ]
+
+        class _SeriesClient(_FakeClient):
+            def get(self, path, **params):  # return only this series' markets (no cross-series dupes)
+                st = params.get("series_ticker", "")
+                return {"markets": [m for m in markets if m["ticker"].startswith(st)], "cursor": ""}
+
+        monkeypatch.setattr(kalshi, "KalshiClient", lambda *a, **k: _SeriesClient(None))
+        out = kalshi.fetch_all_active(max_markets=50, min_volume=5000.0)
+        assert [m.id for m in out] == ["KXHIGHNY-1", "KXBTCD-1"]
+
+    def test_volume_breaks_ties_within_series(self, monkeypatch) -> None:
+        monkeypatch.setenv("KALSHI_SERIES", "KXHIGHNY")
+        body = {
+            "markets": [
+                _raw(ticker="KXHIGHNY-LO", volume_fp="6000", close_time="2026-07-01T00:00:00Z"),
+                _raw(ticker="KXHIGHNY-HI", volume_fp="90000", close_time="2026-07-01T00:00:00Z"),
+            ],
+            "cursor": "",
+        }
+        monkeypatch.setattr(kalshi, "KalshiClient", lambda *a, **k: _FakeClient(body))
+        out = kalshi.fetch_all_active(max_markets=50, min_volume=5000.0)
+        assert [m.id for m in out] == ["KXHIGHNY-HI", "KXHIGHNY-LO"]  # higher volume first
