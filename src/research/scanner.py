@@ -72,6 +72,12 @@ def _ev_fields(
         price_paid = no_cost if (executable and no_cost is not None) else (1.0 - mp)
         ev = (1.0 - prob) - price_paid
 
+    # Net out Kalshi's per-contract trading fee (~rate * p * (1-p)) so marginal edges that the fee
+    # would eat aren't logged as profitable. Polymarket has no such maker/taker fee here, so skip it.
+    if market.exchange == "kalshi" and 0.0 < price_paid < 1.0:
+        fee_rate = float(os.getenv("KALSHI_FEE_RATE", "0.07"))
+        ev -= fee_rate * price_paid * (1.0 - price_paid)
+
     valid = price_paid is not None and 0.0 < price_paid < 1.0
     ev_pct = ev / price_paid if valid else None
     kelly = ev / (1.0 - price_paid) if valid else None
@@ -79,6 +85,14 @@ def _ev_fields(
     return {"side": side, "ev": ev if valid else None, "ev_pct": ev_pct, "kelly": kelly,
             "annualized_ev": annualized, "days_to_close": dtc,
             "price_paid": price_paid, "executable": executable}
+
+
+def _event_group(market_id: str) -> str:
+    """Underlying-event key: the ticker without its strike suffix, so different thresholds of the
+    same event collapse together for dedup (e.g. ``KXCPIYOY-26NOV-T3.9`` -> ``KXCPIYOY-26NOV``).
+    They're driven by one print (the June CPI), so betting many is concentration, not diversification.
+    """
+    return market_id.rsplit("-", 1)[0]
 
 
 def is_extreme_divergence(sig: Signal) -> bool:
@@ -569,9 +583,16 @@ def persist_signals(results: list[ScanResult]) -> int:
     """
     min_ev = float(os.getenv("SIGNAL_MIN_EV", "0.0"))
     min_depth = float(os.getenv("MIN_BOOK_DEPTH_USD", "20"))
+    max_per_event = int(os.getenv("MAX_SIGNALS_PER_EVENT", "1"))
     open_keys = db.get_open_signal_keys()
+    # Seed per-event counts from signals ALREADY open, so the correlation cap holds across scans
+    # (not just within this batch) — otherwise different strikes of one event accrue over time.
+    event_counts: dict[str, int] = {}
+    for mid, _side in open_keys:
+        event_counts[_event_group(mid)] = event_counts.get(_event_group(mid), 0) + 1
     saved = 0
-    for r in results:
+    # Best edge first, so the one signal we keep per event group is the highest-EV threshold.
+    for r in sorted(results, key=lambda x: (x.ev if x.ev is not None else -1.0), reverse=True):
         if not (r.executable and r.ev is not None and r.ev > min_ev):
             continue
         # An executable result always carries these (set together in _pack_result); assert so
@@ -587,6 +608,10 @@ def persist_signals(results: list[ScanResult]) -> int:
             continue
         key = (r.market.id, r.side)
         if key in open_keys:
+            continue
+        # Correlation guard: at most MAX_SIGNALS_PER_EVENT per underlying event (0 = unlimited).
+        group = _event_group(r.market.id)
+        if max_per_event > 0 and event_counts.get(group, 0) >= max_per_event:
             continue
         db.save_signal(Signal(
             market_id=r.market.id,
@@ -608,6 +633,7 @@ def persist_signals(results: list[ScanResult]) -> int:
             refuter_model=r.refutation.refuter_model if r.refutation else None,
         ))
         open_keys.add(key)  # so a repeat (market, side) in the same batch isn't double-logged
+        event_counts[group] = event_counts.get(group, 0) + 1
         saved += 1
     return saved
 

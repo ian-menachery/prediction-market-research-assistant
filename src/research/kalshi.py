@@ -57,9 +57,9 @@ API_PREFIX = "/trade-api/v2"
 # deliberately excluded (efficient markets, no LLM edge, huge volume that would crowd everything
 # out). Override via KALSHI_SERIES (comma-separated); set it empty to use /events discovery.
 DEFAULT_KALSHI_SERIES = (
-    "KXHIGHNY,KXHIGHCHI,KXHIGHLAX,KXHIGHMIA,KXHIGHAUS,"  # daily city high temps
-    "KXCPIYOY,KXPAYROLLS,KXFEDDECISION,"                  # econ releases
-    "KXBTCD,KXETHD"                                       # crypto daily thresholds
+    "KXHIGHNY,KXHIGHCHI,KXHIGHLAX,KXHIGHMIA,KXHIGHAUS,KXHIGHTSEA,KXRAINNYCM,"  # daily weather
+    "KXCPIYOY,KXCPICORE,KXPAYROLLS,KXFEDDECISION,"                              # econ releases
+    "KXBTCD,KXETHD"                                                            # crypto daily thresholds
 )
 
 # Kalshi sometimes emits bare timezone offsets (e.g. `+00` instead of `+00:00`),
@@ -175,6 +175,8 @@ class KalshiMarket(BaseModel):
     subtitle: str = ""
     yes_sub_title: str = ""
     status: str = ""
+    rules_primary: str = ""  # exact settlement criteria (threshold/source/date) — grounds analysis
+    rules_secondary: str = ""
     yes_bid_dollars: float | None = None  # decimal dollars 0–1
     yes_ask_dollars: float | None = None  # decimal dollars 0–1
     last_price_dollars: float | None = None  # decimal dollars 0–1
@@ -275,6 +277,7 @@ def normalize_market(raw: dict) -> Market | None:
         end_date=km.close_time,
         tags=[km.category] if km.category else [],
         description=km.subtitle or km.yes_sub_title,
+        resolution_rules=km.rules_primary,
     )
 
 

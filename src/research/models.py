@@ -50,6 +50,7 @@ class Market(BaseModel):
     end_date: datetime | None
     tags: list[str]
     description: str
+    resolution_rules: str = ""  # exact settlement criteria (Kalshi rules_primary) — grounds the analysis
     fetched_at: datetime = Field(default_factory=_utcnow)
 
 

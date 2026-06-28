@@ -6,7 +6,7 @@ import pytest
 
 from conftest import make_market
 
-from research import kalshi, performance, scanner
+from research import analyzer, kalshi, performance, scanner
 from research.models import Analysis, ScanResult
 
 
@@ -77,6 +77,74 @@ class TestCategory:
     ])
     def test_category_of(self, ticker, cat) -> None:
         assert performance._category_of(ticker) == cat
+
+
+class TestResolutionRules:
+    def test_kalshi_normalize_captures_rules(self) -> None:
+        raw = {
+            "ticker": "KXHIGHNY-26JUN28-T84", "market_type": "binary", "status": "active",
+            "title": "Will the high temp in NYC be >84 on Jun 28, 2026?",
+            "yes_bid_dollars": "0.30", "yes_ask_dollars": "0.34", "last_price_dollars": "0.32",
+            "volume_fp": "12000", "close_time": "2026-06-29T00:00:00Z",
+            "rules_primary": "Resolves Yes if the NWS Central Park high for Jun 28 2026 is > 84.",
+        }
+        m = kalshi.normalize_market(raw)
+        assert m is not None and "Central Park" in m.resolution_rules
+
+    def test_user_prompt_includes_rules(self) -> None:
+        m = make_market(market_prob=0.5, resolution_rules="NWS Central Park high > 84 on Jun 28")
+        p = analyzer._user_prompt(m)
+        assert "Resolution criteria" in p and "Central Park" in p
+
+    def test_db_round_trips_resolution_rules(self, temp_db) -> None:
+        m = make_market(id="KX-R", exchange="kalshi", resolution_rules="BLS one-decimal CPI > 3.9%")
+        temp_db.upsert_markets([m])
+        got = temp_db.get_market("KX-R")
+        assert got is not None and got.resolution_rules == "BLS one-decimal CPI > 3.9%"
+
+
+class TestKalshiFeeInEv:
+    def test_fee_reduces_kalshi_ev_only(self, monkeypatch) -> None:
+        monkeypatch.setenv("KALSHI_FEE_RATE", "0.07")
+        k = make_market(market_prob=0.5, exchange="kalshi")
+        p = make_market(market_prob=0.5, exchange="polymarket")
+        kal = scanner._ev_fields(k, 0.7, yes_cost=0.55, no_cost=0.45, min_days=0.0)
+        poly = scanner._ev_fields(p, 0.7, yes_cost=0.55, no_cost=0.45, min_days=0.0)
+        fee = 0.07 * 0.55 * (1 - 0.55)
+        assert kal["ev"] == pytest.approx(poly["ev"] - fee)
+        assert poly["ev"] == pytest.approx(0.7 - 0.55)  # polymarket unchanged
+
+
+class TestEventDedup:
+    def test_keeps_one_signal_per_event(self, temp_db, monkeypatch) -> None:
+        monkeypatch.setenv("MAX_SIGNALS_PER_EVENT", "1")
+        monkeypatch.setenv("MIN_BOOK_DEPTH_USD", "0")
+        monkeypatch.setenv("SIGNAL_MIN_EV", "0.0")
+        # Two strikes of the same CPI event -> same group "KXCPIYOY-26NOV"; keep the higher-EV one.
+        lo = make_market(id="KXCPIYOY-26NOV-T39", exchange="kalshi", market_prob=0.5)
+        hi = make_market(id="KXCPIYOY-26NOV-T40", exchange="kalshi", market_prob=0.5)
+        temp_db.upsert_markets([lo, hi])
+        n = scanner.persist_signals([
+            _exec_result(lo, ev=0.05, annualized_ev=0.2),
+            _exec_result(hi, ev=0.20, annualized_ev=0.9),
+        ])
+        assert n == 1
+        sigs = temp_db.get_signals()
+        assert len(sigs) == 1 and sigs[0].market_id == "KXCPIYOY-26NOV-T40"  # higher EV kept
+
+    def test_event_group(self) -> None:
+        assert scanner._event_group("KXCPIYOY-26NOV-T3.9") == "KXCPIYOY-26NOV"
+
+    def test_existing_open_signal_blocks_same_event(self, temp_db, monkeypatch) -> None:
+        # An already-open signal in the event group blocks a new strike of the SAME event (cross-scan).
+        monkeypatch.setenv("MAX_SIGNALS_PER_EVENT", "1")
+        monkeypatch.setenv("MIN_BOOK_DEPTH_USD", "0")
+        monkeypatch.setenv("SIGNAL_MIN_EV", "0.0")
+        a = make_market(id="KXCPIYOY-26NOV-T39", exchange="kalshi", market_prob=0.5)
+        b = make_market(id="KXCPIYOY-26NOV-T40", exchange="kalshi", market_prob=0.5)
+        temp_db.upsert_markets([a, b])
+        assert scanner.persist_signals([_exec_result(a, ev=0.1)]) == 1   # first one logs
+        assert scanner.persist_signals([_exec_result(b, ev=0.2)]) == 0   # same event already open
 
 
 class TestHealthCheck:

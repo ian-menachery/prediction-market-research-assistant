@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS markets (
     end_date     TEXT,
     tags         TEXT,                -- JSON array of label strings
     description  TEXT,
+    resolution_rules TEXT DEFAULT '', -- exact settlement criteria (Kalshi rules_primary)
     fetched_at   TEXT    NOT NULL
 );
 
@@ -114,7 +115,7 @@ STALE_THRESHOLD = float(os.getenv("STALE_THRESHOLD", "0.04"))  # price move (0-1
 
 _MARKET_COLUMNS = (
     "id, exchange, slug, question, market_prob, volume_24h, volume_total, liquidity, "
-    "yes_token_id, end_date, tags, description, fetched_at"
+    "yes_token_id, end_date, tags, description, resolution_rules, fetched_at"
 )
 _ANALYSIS_COLUMNS = (
     "market_id, created_at, model, claude_prob, market_prob_at_analysis, "
@@ -179,6 +180,7 @@ def _market_to_row(m: Market) -> tuple:
         m.end_date.isoformat() if m.end_date else None,
         json.dumps(m.tags),
         m.description,
+        m.resolution_rules,
         m.fetched_at.isoformat(),
     )
 
@@ -186,6 +188,7 @@ def _market_to_row(m: Market) -> tuple:
 def _row_to_market(row: sqlite3.Row) -> Market:
     data = dict(row)
     data["tags"] = json.loads(data["tags"]) if data["tags"] else []
+    data["resolution_rules"] = data.get("resolution_rules") or ""  # tolerate pre-migration rows
     return Market(**data)
 
 
@@ -277,6 +280,8 @@ def init_db() -> None:
         market_cols = {row[1] for row in conn.execute("PRAGMA table_info(markets)").fetchall()}
         if "exchange" not in market_cols:
             conn.execute("ALTER TABLE markets ADD COLUMN exchange TEXT NOT NULL DEFAULT 'polymarket'")
+        if "resolution_rules" not in market_cols:  # exact settlement criteria (added later)
+            conn.execute("ALTER TABLE markets ADD COLUMN resolution_rules TEXT DEFAULT ''")
         signal_cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
         if "exchange" not in signal_cols:
             conn.execute("ALTER TABLE signals ADD COLUMN exchange TEXT NOT NULL DEFAULT 'polymarket'")
@@ -292,7 +297,7 @@ def init_db() -> None:
 def upsert_markets(markets: list[Market]) -> None:
     """INSERT OR REPLACE markets so re-fetching doesn't duplicate rows."""
     rows = [_market_to_row(m) for m in markets]
-    placeholders = ", ".join(["?"] * 13)
+    placeholders = ", ".join(["?"] * len(_MARKET_COLUMNS.split(",")))
     with _conn() as conn:
         conn.executemany(
             f"INSERT OR REPLACE INTO markets ({_MARKET_COLUMNS}) VALUES ({placeholders})",

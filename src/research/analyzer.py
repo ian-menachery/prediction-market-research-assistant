@@ -48,14 +48,24 @@ _MAX_PAUSE_CONTINUATIONS = 3
 _VALID_CONFIDENCE = set(get_args(Confidence))
 
 SYSTEM_PROMPT = (
-    "You are a calibrated prediction market analyst. Use web search to research "
-    "the question, then respond ONLY with valid JSON — no markdown, no backticks:\n"
+    "You are a calibrated prediction market analyst. Method, in order:\n"
+    "1. Read the resolution criteria EXACTLY: the precise threshold/strike, the date, and the "
+    "official settlement source. Most errors come from misreading these (e.g. > vs >=, the wrong "
+    "day, or the wrong measuring station/agency).\n"
+    "2. Use web search to find the AUTHORITATIVE source named in the criteria — e.g. the National "
+    "Weather Service / NOAA climatological report for weather (the exact station), the Bureau of "
+    "Labor Statistics (plus the Cleveland Fed nowcast) for CPI/inflation and jobs, the issuing "
+    "agency for other econ releases. Prefer the official figure over secondary aggregators.\n"
+    "3. Estimate the YES probability for the EXACT resolution condition, and sanity-check it against "
+    "the current market price — a very large gap usually means you misread the criteria; re-verify.\n\n"
+    "Respond ONLY with valid JSON — no markdown, no backticks:\n"
     '{"probability":NUMBER,"confidence":"low"|"medium"|"high",'
     '"edge":"underpriced"|"overpriced"|"fair",'
     '"factors":["...","...","..."],"summary":"2-3 sentences"}\n\n'
     "probability = integer 0-100 for YES. edge = whether the current market price "
     "is underpriced (your estimate is higher), overpriced (your estimate is lower), "
-    "or fair (within 3pp). confidence = quality of information you found."
+    "or fair (within 3pp). confidence = quality of information you found (low if you could not "
+    "confirm the official source or the exact threshold)."
 )
 
 _dotenv_loaded = False
@@ -173,12 +183,16 @@ def _user_prompt(market: Market) -> str:
         price_line = "Current market YES probability: unknown"
     closes = market.end_date.date().isoformat() if market.end_date else "unknown"
     context = f"\nContext: {market.description[:400]}" if market.description else ""
+    # The exact resolution criteria (threshold/source/date) are the highest-signal context — they
+    # prevent misreading what's actually being predicted. Include them verbatim when available.
+    rules = f"\nResolution criteria: {market.resolution_rules[:600]}" if market.resolution_rules else ""
     return (
         f'Market: "{market.question}"\n'
         f"{price_line}\n"
         f"Closes: {closes}"
-        f"{context}\n\n"
-        "Search for current information and give your calibrated probability estimate."
+        f"{context}"
+        f"{rules}\n\n"
+        "Research the exact resolution criteria above, then give your calibrated probability estimate."
     )
 
 
