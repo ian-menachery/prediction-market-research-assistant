@@ -5,5 +5,5 @@ ruff>=0.5
 mypy>=1.10          # static type checking (make typecheck / CI); validates the code's type hints
 pre-commit>=3.7     # local ruff+mypy hooks before each commit (.pre-commit-config.yaml)
 pip-audit>=2.7      # dependency CVE scan (advisory CI step)
-selenium>=4.20      # headless-browser frontend smoke test (skips when no browser is present)
+selenium>=4.45.0      # headless-browser frontend smoke test (skips when no browser is present)
 pip-tools>=7.0      # `make lock` -> requirements.lock / requirements-dev.lock
