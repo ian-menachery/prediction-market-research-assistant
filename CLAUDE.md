@@ -24,9 +24,14 @@ Pipeline: **series discovery → resolution-grounded LLM analysis → executable
 deduped) → trade-ticket (capped stake) → ROI scoreboard**, with calibration + a "why did it diverge?"
 review loop building over time.
 
-## ⚖️ VERDICT (2026-07-11) — the paper track record is negative; no edge found
+## ⚖️ VERDICT (2026-07-11) — WOUND DOWN. No accessible edge; project archived.
 
-The first batch of signals resolved. **The model lost, decisively:**
+**Status: archived on `main`. Spending is off (`SCAN_INTERVAL_HOURS=` empty); the logon auto-launch was
+removed; the app is not running.** Both ways to make money were tested and failed — see below. Total
+real cost of the whole experiment: ~$6.27 in credits, no real bets. To revive: set `SCAN_INTERVAL_HOURS`
+and `make run`, but read this verdict first.
+
+**Forecasting (out-predict the market) — the model lost, decisively:**
 - **1 win / 13 resolved · −$585.85 modeled P&L** (at the $50 modeled position; no real bets were placed —
   only ~$6.27 of credits was actually spent).
 - **Econ 0/8 (−$400):** the model bet "June payrolls will be high" with 85–88% confidence across every
@@ -42,24 +47,27 @@ are efficiently forecast-priced), and is over-confident + directionally wrong. T
 **process**: paper-validation cost $6, not $585. Spending is paused (`SCAN_INTERVAL_HOURS=` empty).
 Do NOT fund more forecasting scans on this evidence without a strategy change (see next section).
 
-## If resuming — how it might ACTUALLY make money (directions, not promises)
-The data says: stop trying to out-forecast efficient markets. Plausible pivots, roughly in order of
-"edge that doesn't require beating professionals":
-1. **Structural / arbitrage edges (no forecasting needed).** The engine already fetches each event's full
-   outcome distribution (`Market.siblings`). Scan for *internal* mispricings instead of forecasting:
-   mutually-exclusive bands whose prices sum ≠ 100%, or "above X" thresholds that violate monotonicity
-   (P(>70k) < P(>90k)). These are risk-controlled and don't need the LLM to be right about the world.
-2. **Target markets where an LLM plausibly has an edge, not efficient ones.** Avoid anything a
+**Structural / taker arbitrage — ALSO tested (free probe, 2026-07-11) and DEAD.** For 10 liquid Kalshi
+weather events, buying every outcome's YES costs **$1.05–1.11** for a $1 payout (a 5–11% overround), and
+the rare sell-side gap ($1.03–1.05) is eaten by ~$0.07 in per-contract fees. As a *taker* you always pay
+the market-maker's spread, and it's wider than any internal inconsistency. The edge inside the spread
+belongs to whoever *posts* it (market-making — capital/speed/inventory infra this tool doesn't have).
+
+→ Both forecasting AND clean arbitrage lose to Kalshi's spread. **Conclusion stands: no accessible edge
+for a manual LLM-taker — this is the "accept the base rate" outcome.**
+
+## If ever revived — the only directions not already disproven (low odds, real cost)
+1. **Target markets where an LLM plausibly has an edge, not efficient ones.** Avoid anything a
    professional model already prices — weather, CPI, payrolls, Fed, crypto price (all lost/efficient).
    Prefer **under-followed, thin, text/knowledge-resolution** markets (niche political/legal/news, "will X
    happen by date") where reading many sources beats a slow crowd.
-3. **Only bet with a specific, verifiable reason the market is wrong.** Gate a signal on the model naming
+2. **Only bet with a specific, verifiable reason the market is wrong.** Gate a signal on the model naming
    a concrete fact the market plausibly missed — not just "my estimate differs." Make the adversarial
    refutation actually KILL bets (currently it only flags); shrink estimates toward the market.
-4. **Prove per-category edge BEFORE paying to trade it.** Build the deferred backtest: score the model on
+3. **Prove per-category edge BEFORE paying to trade it.** Build the deferred backtest: score the model on
    already-resolved markets and only fund categories with demonstrated positive Brier skill.
-5. **Accept the base rate.** Liquid prediction markets are hard to beat; there's a real chance the honest
-   answer is "no edge — don't spend." That's a valid outcome the paper phase was designed to surface.
+
+Absent one of those working, the honest answer is settled: **no edge — stay wound down.**
 
 ## Stack (locked)
 - `flask`, `httpx` (sync), `anthropic`, `openai`, `pydantic`, `sqlite3` (stdlib), `python-dotenv`
