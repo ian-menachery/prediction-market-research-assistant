@@ -24,9 +24,42 @@ Pipeline: **series discovery → resolution-grounded LLM analysis → executable
 deduped) → trade-ticket (capped stake) → ROI scoreboard**, with calibration + a "why did it diverge?"
 review loop building over time.
 
-Status (2026-06-28): live and feature-complete for the **validate-on-paper** phase. Model
-`claude-sonnet-4-6` is **uncalibrated** (0 resolved pairs yet) — treat every edge as a small
-experiment until calibration activates. Companion to the calibration tracker (separate repo).
+## ⚖️ VERDICT (2026-07-11) — the paper track record is negative; no edge found
+
+The first batch of signals resolved. **The model lost, decisively:**
+- **1 win / 13 resolved · −$585.85 modeled P&L** (at the $50 modeled position; no real bets were placed —
+  only ~$6.27 of credits was actually spent).
+- **Econ 0/8 (−$400):** the model bet "June payrolls will be high" with 85–88% confidence across every
+  threshold — all wrong (jobs came in weak). It has no forecasting edge on a number professional
+  nowcasts already price.
+- **Weather 1/5 (−$186):** confirmed the "fabricated edge" bug with real outcomes (wrong resolution
+  station; fixed after, unverified at scale).
+- **Calibration: Brier 0.305 over 22 pairs — WORSE than a 0.25 coin flip.** Negative skill, not just
+  "no edge."
+
+**Conclusion:** a generic LLM + web search has **no durable edge** on liquid Kalshi markets (weather/econ
+are efficiently forecast-priced), and is over-confident + directionally wrong. The one win here was the
+**process**: paper-validation cost $6, not $585. Spending is paused (`SCAN_INTERVAL_HOURS=` empty).
+Do NOT fund more forecasting scans on this evidence without a strategy change (see next section).
+
+## If resuming — how it might ACTUALLY make money (directions, not promises)
+The data says: stop trying to out-forecast efficient markets. Plausible pivots, roughly in order of
+"edge that doesn't require beating professionals":
+1. **Structural / arbitrage edges (no forecasting needed).** The engine already fetches each event's full
+   outcome distribution (`Market.siblings`). Scan for *internal* mispricings instead of forecasting:
+   mutually-exclusive bands whose prices sum ≠ 100%, or "above X" thresholds that violate monotonicity
+   (P(>70k) < P(>90k)). These are risk-controlled and don't need the LLM to be right about the world.
+2. **Target markets where an LLM plausibly has an edge, not efficient ones.** Avoid anything a
+   professional model already prices — weather, CPI, payrolls, Fed, crypto price (all lost/efficient).
+   Prefer **under-followed, thin, text/knowledge-resolution** markets (niche political/legal/news, "will X
+   happen by date") where reading many sources beats a slow crowd.
+3. **Only bet with a specific, verifiable reason the market is wrong.** Gate a signal on the model naming
+   a concrete fact the market plausibly missed — not just "my estimate differs." Make the adversarial
+   refutation actually KILL bets (currently it only flags); shrink estimates toward the market.
+4. **Prove per-category edge BEFORE paying to trade it.** Build the deferred backtest: score the model on
+   already-resolved markets and only fund categories with demonstrated positive Brier skill.
+5. **Accept the base rate.** Liquid prediction markets are hard to beat; there's a real chance the honest
+   answer is "no edge — don't spend." That's a valid outcome the paper phase was designed to surface.
 
 ## Stack (locked)
 - `flask`, `httpx` (sync), `anthropic`, `openai`, `pydantic`, `sqlite3` (stdlib), `python-dotenv`
