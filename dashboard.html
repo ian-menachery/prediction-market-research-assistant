@@ -51,7 +51,7 @@
   .verdict .x{color:var(--critical);font-weight:600}
 
   /* ---- stat tiles ---- */
-  .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:22px 0 4px}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0 4px}
   .tile{background:var(--surface-1);border:1px solid var(--border);border-radius:8px;padding:14px 14px 12px}
   .tile .v{font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1.05}
   .tile .l{font-size:12px;color:var(--muted);margin-top:5px}
@@ -131,7 +131,7 @@
 
   /* ---- conclusion ---- */
   .concl .big{font-size:19px;color:var(--ink);max-width:74ch;font-weight:500}
-  .ratio{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 0 6px}
+  .ratio{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:22px 0 6px}
   .ratio .tile .v{font-size:30px}
   footer{padding:30px 0 60px;color:var(--muted);font-size:12.5px}
   footer .links{margin-top:8px;display:flex;gap:18px;flex-wrap:wrap}
@@ -452,7 +452,6 @@
   <div class="ratio">
     <div class="tile"><div class="v">$6.97</div><div class="l">total API spend to a complete negative</div></div>
     <div class="tile good"><div class="v">$0</div><div class="l">capital ever at risk</div></div>
-    <div class="tile bad"><div class="v">$585.85</div><div class="l">modeled loss avoided</div></div>
   </div>
 
   <footer>
@@ -531,7 +530,6 @@ function hover(node,html){node.classList.add("hit");
     {v:"0.305",l:"forecasting Brier · worse than a 0.25 coin flip",cls:"bad"},
     {v:"$6.97",l:"total API spend"},
     {v:"$0",l:"capital deployed",cls:"good"},
-    {v:"$585.85",l:"modeled loss avoided",cls:"bad"},
   ];
   const m=document.getElementById("tiles");
   tiles.forEach(t=>{const d=document.createElement("div");d.className="tile"+(t.cls?" "+t.cls:"");
