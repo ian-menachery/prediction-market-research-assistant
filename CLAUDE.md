@@ -24,12 +24,14 @@ Pipeline: **series discovery → resolution-grounded LLM analysis → executable
 deduped) → trade-ticket (capped stake) → ROI scoreboard**, with calibration + a "why did it diverge?"
 review loop building over time.
 
-## ⚖️ VERDICT (2026-07-11) — WOUND DOWN. No accessible edge; project archived.
+## ⚖️ VERDICT (2026-07-11; re-confirmed 2026-07-30) — WOUND DOWN. No accessible edge; project archived.
 
 **Status: archived on `main`. Spending is off (`SCAN_INTERVAL_HOURS=` empty); the logon auto-launch was
-removed; the app is not running.** Both ways to make money were tested and failed — see below. Total
-real cost of the whole experiment: ~$6.27 in credits, no real bets. To revive: set `SCAN_INTERVAL_HOURS`
-and `make run`, but read this verdict first.
+removed; the app is not running.** Every way to make money was tested and failed — forecasting, taker
+arbitrage, and (2026-07-30) a per-category edge search + a Politics-category backtest gate. Total real
+cost of the whole experiment: ~$6.97 in credits (~$6.27 original + $0.70 Politics probe), no real bets.
+Full edge-search + backtest data: **`BACKTEST_NOTES.md`** (raw artifacts in `backtest/`). To revive: set
+`SCAN_INTERVAL_HOURS` and `make run`, but read this verdict first.
 
 **Forecasting (out-predict the market) — the model lost, decisively:**
 - **1 win / 13 resolved · −$585.85 modeled P&L** (at the $50 modeled position; no real bets were placed —
@@ -56,18 +58,37 @@ belongs to whoever *posts* it (market-making — capital/speed/inventory infra t
 → Both forecasting AND clean arbitrage lose to Kalshi's spread. **Conclusion stands: no accessible edge
 for a manual LLM-taker — this is the "accept the base rate" outcome.**
 
-## If ever revived — the only directions not already disproven (low odds, real cost)
-1. **Target markets where an LLM plausibly has an edge, not efficient ones.** Avoid anything a
-   professional model already prices — weather, CPI, payrolls, Fed, crypto price (all lost/efficient).
-   Prefer **under-followed, thin, text/knowledge-resolution** markets (niche political/legal/news, "will X
-   happen by date") where reading many sources beats a slow crowd.
+**Edge search + Politics gate — ALSO tested (2026-07-12 & 2026-07-30) and NULL.** Full data:
+`BACKTEST_NOTES.md` (+ raw probe artifacts in `backtest/`). Summary:
+- **Per-category autopsy:** the −$586 loss is **uniform** (econ 0/8, weather 1/5, near-identical Brier
+  ~0.50), NOT a good pocket hidden in the average. The spread cost only ~$7 of the loss — **being wrong
+  killed it, not execution cost.** No slice is net-positive at n≥15.
+- **Confidence-inversion "edge" is a mirage:** the 13 signals are only ~5 independent events (8 payroll
+  legs = one jobs number); "invert the model" is small-n overfitting, not exploitable.
+- **Politics gate FAILED (the one flagged lead):** a look-ahead-free web-search backtest is
+  **structurally impossible** — the 232 near-dated resolved markets are all post-cutoff, so the analyzer
+  reads the outcome off the web (demonstrated 6/6 leak; contaminated Brier 0.164 that still didn't beat
+  the market). The one clean free measurement — the market's own price — is **already efficient**
+  (Brier ~0.10, skill +0.5). Same efficient-market wall.
+
+## If ever revived — directions now MOSTLY disproven too (very low odds, real cost)
+1. ~~**Target under-followed, text/knowledge-resolution markets (niche political/legal/news).**~~
+   **TESTED 2026-07-30 → dead-end.** Near-dated Politics is the most liquid such category and it is
+   *efficiently priced* (market Brier ~0.10); worse, its news-resolution nature makes any resolved-market
+   backtest impossible to run leak-free. The only untainted test is a live forward paper-test, which the
+   free evidence does not justify funding. See `BACKTEST_NOTES.md` §2.
 2. **Only bet with a specific, verifiable reason the market is wrong.** Gate a signal on the model naming
    a concrete fact the market plausibly missed — not just "my estimate differs." Make the adversarial
    refutation actually KILL bets (currently it only flags); shrink estimates toward the market.
-3. **Prove per-category edge BEFORE paying to trade it.** Build the deferred backtest: score the model on
-   already-resolved markets and only fund categories with demonstrated positive Brier skill.
+   (Untested, but note the model *misreads resolution criteria* even when handed the answer — see the
+   probe's confident 0.99→NO. A "verifiable reason" gate leans on the same weak criteria-reading.)
+3. ~~**Prove per-category edge via a resolved-market backtest before trading it.**~~ Attempted for
+   Politics — **the backtest itself is unrunnable leak-free** for any category that resolves on public
+   news/text (exactly the "plausibly inefficient" kind). Backtesting only works for numeric-resolution
+   categories, which are the efficient ones the model already lost on. This route is a catch-22.
 
-Absent one of those working, the honest answer is settled: **no edge — stay wound down.**
+Absent a fundamentally different strategy (not "generic LLM + web search vs. a liquid market"), the
+honest answer is settled: **no edge — stay wound down.**
 
 ## Stack (locked)
 - `flask`, `httpx` (sync), `anthropic`, `openai`, `pydantic`, `sqlite3` (stdlib), `python-dotenv`
