@@ -8,11 +8,14 @@ conclusions can be re-audited. Two work packages are recorded:
    untested market universe, and check for structural arbitrage.
 2. **Politics gate backtest** (2026-07-30) — the one lead the edge search flagged (near-dated
    Politics), tested as a go/no-go gate for forward paper-testing.
+3. **Mechanical / behavioral mispricing study** (2026-07-30) — a different hypothesis from forecasting:
+   test whether the crowd systematically *misprices as a population* (longshot bias, timing, structure)
+   in a way a taker can exploit net of the overround, on 4,610 resolved markets.
 
-**Both came back NULL. The verdict is unchanged: no accessible edge — stay wound down.**
+**All three came back NULL. The verdict is unchanged: no accessible edge — stay wound down.**
 
 **Total real LLM spend across all of this work: $0.70** (7 web-search analyses in the Politics probe;
-everything else used free Kalshi public reads + the local SQLite DB, $0).
+the edge search and the entire behavioral study used free Kalshi public reads + local compute, $0).
 
 ---
 
@@ -26,8 +29,14 @@ everything else used free Kalshi public reads + the local SQLite DB, $0).
   See `backtest/README.md`.
 - `data/polymarket.db` (gitignored) — the 24 signals / 71 analyses the Part 1–2 autopsy reads. The
   autopsy numbers below are copied out so they survive independent of the DB.
+- `backtest/behavioral/priced_rows.jsonl` — the **frozen 4,610-market dataset** for §3 (per market:
+  category, event, ticker, outcome, volume, and entry prices at open/mid-life/24h/last with far-touch
+  bid & ask). `settled_sample.json` is its input sample. `build_sample.py` (rebuilds the sample from
+  live Kalshi), `fetch_prices.py` (attaches candlestick prices), and `analyze.py` (reproduces every §3
+  number offline from `priced_rows.jsonl`, $0, no network) are alongside it.
 - Parts 3–4 and the Politics market baseline read **live** Kalshi endpoints; those numbers are a
-  snapshot as of the dates noted and will drift. They are recorded here as they stood.
+  snapshot as of the dates noted and will drift. They are recorded here as they stood. The §3 behavioral
+  numbers are reproducible exactly from the frozen `priced_rows.jsonl` via `analyze.py`.
 
 Ground rule used for all P&L: **gross** = entry priced at the market mid; **net** = entry priced at the
 realistic far touch (ask/bid VWAP already stored as `price_paid`) + Kalshi `0.07·p·(1−p)` fee. Held to
@@ -210,8 +219,82 @@ by > spread — the same wall the tool lost to on weather (Brier 0.51) and econ 
 
 ---
 
+## 3. Mechanical / behavioral mispricing study (2026-07-30)
+
+**Different hypothesis from forecasting.** Instead of predicting individual outcomes, test whether the
+crowd *misprices as a population* in a mechanical way a $10 taker can harvest **net of the ~7% overround
++ fees** — longshot bias, timing, structural leg mis-sum, mean-reversion, volume effects. $0 spend
+(free Kalshi reads + local compute). Reproducible from `backtest/behavioral/` (`analyze.py` on the
+frozen `priced_rows.jsonl`).
+
+**Sample: 4,610 resolved binary markets across 1,901 distinct events**, 13+ categories, capped ≤3
+legs/event and ≤600/category (so no category/event dominates), volume ≥ $100. Entry prices from
+candlesticks at four horizons (open / mid-life / ~24h-before / last-bar); ~95% coverage. **Net** uses
+far-touch fills (buy at `yes_ask`, sell at `1 − yes_bid`) + `0.07·p·(1−p)` fee, held to resolution.
+**All stats are event-clustered** (average within an event, then across events → effective n = events).
+
+### Test 1 — longshot bias (calibration curve, horizon p_mid)
+The favorite-longshot skew is real and monotonic **gross** — longshots resolve YES *less* than priced,
+favorites *more*:
+
+| Mid band | n | events | mean price | realized freq | gross BUY | gross SELL |
+|---|--:|--:|--:|--:|--:|--:|
+| 0.01–0.05 | 817 | 508 | 0.019 | 0.011 | −0.008 | +0.008 |
+| 0.05–0.10 | 267 | 234 | 0.072 | 0.041 | −0.031 | +0.031 |
+| 0.50–0.60 | 216 | 196 | 0.550 | 0.648 | +0.098 | −0.098 |
+| 0.60–0.70 | 238 | 219 | 0.647 | 0.765 | +0.118 | −0.118 |
+| 0.80–0.90 | 544 | 425 | 0.853 | 0.932 | +0.079 | −0.079 |
+| 0.95–0.99 | 480 | 362 | 0.971 | 0.992 | +0.020 | −0.020 |
+
+**Net of overround + fees it dies:**
+
+| Strategy (p_mid) | events | gross/ct | **net/ct** | SE | t | Exploitable? |
+|---|--:|--:|--:|--:|--:|---|
+| Sell all longshots (0.01–0.50) | 804 | −0.025 | **−0.058** | 0.011 | −5.35 | **NO** (sig. negative) |
+| Sell deep longshots (0.01–0.10) | 382 | +0.007 | −0.008 | 0.009 | −0.90 | NO |
+| Buy all favorites (0.50–0.99) | 812 | +0.046 | +0.012 | 0.011 | +1.08 | **NO** (not ≠ 0) |
+
+Category breakdown of buy-favorites scatters both signs (Commodities +2.77, Entertainment +2.43,
+Politics +2.26; Mentions −2.28) — incoherent, i.e. noise under multiple testing.
+
+### Test 2 — near resolution / entry-timing robustness
+The bias does **not** become exploitable near close, and buy-favorites **flips sign with entry timing**
+(fatal for a real mechanical edge): p_open −0.007 (t −0.60) · p_mid +0.012 (t +1.08) · p_24h −0.009
+(t −0.74) · p_last −0.016 (t −1.20). Near close: sell longshots −0.053 (t −3.52), buy favorites −0.016.
+
+### Test 3 — timing (granularity-limited)
+`mean(outcome − open_price) = +0.029` is just the skew re-expressed, not a $ edge (buying at open is
+net −0.007). Day-of-week calibration error (−0.025 … +0.055) is within noise and confounded. Candlestick
+granularity (hourly ≤3d / daily >3d) means **sub-daily open/close timing is not resolvable — Test 3 is
+inconclusive by data limit, not confirmed absent.**
+
+### Test 4 — other structural regularities
+- **Mean reversion:** corr(open→mid, mid→last) = **−0.004** → none.
+- **Volume vs. calibration:** Brier <1k = 0.045, 1k–10k = 0.088, ≥10k = 0.126 — *lower* volume looks
+  "sharper," but that is a composition artifact (low-volume markets sit at extreme prices), **not** a
+  tradeable "thin markets" signal.
+- **Multi-outcome legs:** the favorite leg just re-expresses the Test-1 favorite bias — not separately
+  exploitable.
+
+### The lone nominal net-positive — killed
+Buying **deep favorites (0.90–0.99)** shows net **+0.019/ct (t 2.64)** at mid-life and **+0.023/ct
+(t 2.90)** near close — the only thing clearing +2·SE. **Not real:** the entire positive rests on a
+handful of tail events — **7 losses (mid-life) / 2 losses (near-close)** — with a +0.03-win / −0.95-loss
+skew. A few more losses (well inside the Poisson CI on 2–7) zeroes or reverses it, so the Gaussian
+t-stat is **invalid** under this skew; and with no ask-*size* in candlesticks, a **$10 fill at 0.95+
+quotes is unverifiable** (depth is thin there). Picking up pennies in front of a steamroller — dead.
+
+### Verdict — clean null
+No mechanical, non-forecasting pattern is net-positive after the overround once tested for robustness,
+event-clustered n, and payoff skew. The favorite-longshot bias is real gross and **fully consumed by
+the spread.** Nothing survives; **ranked list of exploitable patterns is empty.**
+
+---
+
 ## Bottom line
 
 Forecasting lost (Part 1–2), the untested-universe leads collapse to an efficient market or an
-un-runnable backtest (Part 3 + §2), and structural arbitrage is dead (Part 4). Every path checked ends
-at Kalshi's spread or the market's efficiency. **No accessible edge for a manual LLM-taker. Wound down.**
+un-runnable backtest (Part 3 + §2), structural arbitrage is dead (Part 4), and the mechanical/behavioral
+hypothesis — the largest, cleanest pass at 4,610 event-clustered markets — is net-negative once the ~7%
+overround is charged (§3). Every path checked ends at Kalshi's spread or the market's efficiency.
+**No accessible edge for a manual LLM-taker. Wound down.**
