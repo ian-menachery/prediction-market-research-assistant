@@ -1,3 +1,11 @@
+# ============================================================================
+# ARCHIVED ONE-SHOT SCRIPT — DO NOT RUN.
+# Produced the 2026-07-30 Politics-gate look-ahead probe (see ../../BACKTEST_NOTES.md §2).
+# Running it SPENDS Anthropic credits (~$0.08-0.16/analysis via server-side web_search)
+# and — because the target markets are post-training-cutoff — will re-leak the outcome,
+# so it cannot yield a valid backtest. Kept only as a record of exactly what was run.
+# Its output is the frozen politics_gate_probe_out.jsonl next to this file.
+# ============================================================================
 import os, time, json
 from datetime import datetime
 os.environ.setdefault("LLM_PROVIDER","anthropic")

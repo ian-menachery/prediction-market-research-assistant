@@ -26,8 +26,13 @@ review loop building over time.
 
 ## ⚖️ VERDICT (2026-07-11; re-confirmed 2026-07-30) — WOUND DOWN. No accessible edge; project archived.
 
-**Status: archived on `main`. Spending is off (`SCAN_INTERVAL_HOURS=` empty); the logon auto-launch was
-removed; the app is not running.** Every way to make money was tested and failed — forecasting, taker
+**Status: archived on `main`. Spending is off (`SCAN_INTERVAL_HOURS=` empty); the app is not running.**
+(Auto-launch note, verified 2026-07-30: a boot-triggered Scheduled Task `PolymarketResearchCopilot`
+still exists and is *enabled*, but its action points at the **stale pre-rename path**
+`...\polymarket-claude\scripts\start_app.bat` — which no longer exists after the rename to `PMRA` — so
+it **fails on boot (LastTaskResult=1) and never launches the app**. It is inert cruft; recommend
+deleting it. Even if it did launch, spending stays off because `SCAN_INTERVAL_HOURS` is empty.)
+Every way to make money was tested and failed — forecasting, taker
 arbitrage, and (2026-07-30) a per-category edge search + a Politics-category backtest gate. Total real
 cost of the whole experiment: ~$6.97 in credits (~$6.27 original + $0.70 Politics probe), no real bets.
 Full edge-search + backtest data: **`BACKTEST_NOTES.md`** (raw artifacts in `backtest/`). To revive: set

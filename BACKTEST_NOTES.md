@@ -18,11 +18,12 @@ everything else used free Kalshi public reads + the local SQLite DB, $0).
 
 ## 0. Where the raw data lives (so nothing is lost)
 
-- `backtest/politics_gate_probe_out.jsonl` — raw output of the 6-market look-ahead probe (model prob,
-  confidence, web-search count, cost, full summary + factors, actual outcome). The 7th pilot analysis
-  (`KXCABLEAVE`, $0.155) is described inline below; it duplicates the batch's `KXCABLEAVE` row.
-- `backtest/politics_gate_probe.py` — the exact script that produced the probe (reproducible; note it
-  **spends credits** and, because the markets are post-cutoff, will re-leak the outcome).
+- `backtest/archive/politics_gate_probe_out.jsonl` — raw output of the 6-market look-ahead probe (model
+  prob, confidence, web-search count, cost, full summary + factors, actual outcome). The 7th pilot
+  analysis (`KXCABLEAVE`, $0.155) is described inline below; it duplicates the batch's `KXCABLEAVE` row.
+- `backtest/archive/politics_gate_probe.py` — the exact script that produced the probe (**archived —
+  do not run**; it spends credits and, because the markets are post-cutoff, re-leaks the outcome).
+  See `backtest/README.md`.
 - `data/polymarket.db` (gitignored) — the 24 signals / 71 analyses the Part 1–2 autopsy reads. The
   autopsy numbers below are copied out so they survive independent of the DB.
 - Parts 3–4 and the Politics market baseline read **live** Kalshi endpoints; those numbers are a
