@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PMRA — A Falsification Study</title>
+<style>
+  :root{
+    --surface-1:#fcfcfb; --plane:#f9f9f7;
+    --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,.10);
+    --series-1:#2a78d6;   /* blue  — gross / market / primary */
+    --series-2:#eb6834;   /* orange — net-of-cost */
+    --critical:#d03b3b;   /* worse-than-chance / net-negative / over $1 */
+    --serious:#ec835a; --good:#006300;
+    --maxw:1080px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--plane); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  a{color:var(--series-1);text-decoration:none;border-bottom:1px solid rgba(42,120,214,.3)}
+  a:hover{border-bottom-color:var(--series-1)}
+
+  /* ---- rhythm ---- */
+  section{padding:44px 0;border-top:1px solid var(--border)}
+  section:first-of-type{border-top:none}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+  h1{font-size:34px;line-height:1.15;margin:0 0 8px;letter-spacing:-.01em}
+  h2{font-size:22px;margin:0 0 6px;letter-spacing:-.01em}
+  h3{font-size:15px;margin:0 0 4px}
+  p{margin:0 0 12px;color:var(--ink-2);max-width:70ch}
+  .lead{font-size:16px;color:var(--ink)}
+  .sub{font-size:13px;color:var(--muted)}
+  strong{color:var(--ink)}
+
+  /* ---- header ---- */
+  header{padding:52px 0 8px}
+  .thesis{
+    background:var(--surface-1);border:1px solid var(--border);border-left:3px solid var(--series-1);
+    border-radius:8px;padding:16px 18px;margin:18px 0 6px;max-width:78ch}
+  .thesis .k{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px}
+  .thesis .claim{font-size:16px;color:var(--ink);margin:0 0 10px}
+  .thesis .kill{font-size:13.5px;color:var(--ink-2);margin:0}
+  .thesis .kill b{color:var(--ink)}
+  .verdict{font-size:15px;color:var(--ink);margin:16px 0 0;font-weight:500}
+  .verdict .x{color:var(--critical);font-weight:600}
+
+  /* ---- stat tiles ---- */
+  .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:22px 0 4px}
+  .tile{background:var(--surface-1);border:1px solid var(--border);border-radius:8px;padding:14px 14px 12px}
+  .tile .v{font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1.05}
+  .tile .l{font-size:12px;color:var(--muted);margin-top:5px}
+  .tile.bad .v{color:var(--critical)}
+  .tile.good .v{color:var(--good)}
+
+  /* ---- figure / chart cards ---- */
+  .card{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:20px 22px}
+  figure{margin:0}
+  figcaption{font-size:13px;color:var(--ink-2);margin-top:12px;max-width:80ch}
+  figcaption b{color:var(--ink)}
+  .chart-title{font-size:14px;font-weight:600;color:var(--ink);margin:0 0 2px}
+  .chart-note{font-size:12px;color:var(--muted);margin:0 0 10px}
+  svg{display:block;width:100%;height:auto;overflow:visible}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2);margin:10px 0 0}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .swatch{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .dash{width:14px;height:0;border-top:2px dashed var(--baseline);display:inline-block}
+
+  .hero-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:22px;align-items:start}
+  .aside h3{color:var(--ink)}
+  .aside ul{margin:8px 0 0;padding-left:18px;color:var(--ink-2);font-size:13.5px}
+  .aside li{margin-bottom:7px}
+
+  /* ---- harness ---- */
+  .arch{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0 14px}
+  .arch .step{background:var(--plane);border:1px solid var(--border);border-radius:8px;padding:12px}
+  .arch .step .n{font-size:11px;color:var(--muted);letter-spacing:.1em}
+  .arch .step .t{font-size:13.5px;font-weight:600;margin:3px 0 2px}
+  .arch .step .d{font-size:12px;color:var(--ink-2)}
+  .arch .step.instr{border-color:rgba(42,120,214,.45);background:#f4f8fe}
+  .tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .tag{font-size:12px;color:var(--ink-2);background:var(--plane);border:1px solid var(--border);border-radius:999px;padding:3px 10px}
+
+  /* ---- four passes ---- */
+  .passes{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .pass .lab{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .pass .verdict-chip{display:inline-block;font-size:11.5px;font-weight:600;color:var(--critical);
+    background:rgba(208,59,59,.08);border:1px solid rgba(208,59,59,.25);border-radius:999px;padding:2px 9px;margin-top:8px}
+  .inv{display:flex;align-items:center;justify-content:center;gap:14px;padding:14px 0 6px}
+  .inv .num{text-align:center}
+  .inv .num b{font-size:40px;font-weight:600;letter-spacing:-.02em;display:block;line-height:1}
+  .inv .num.big b{color:var(--muted)}
+  .inv .num.small b{color:var(--ink)}
+  .inv .num span{font-size:11.5px;color:var(--muted)}
+  .inv .arrow{color:var(--muted);font-size:22px}
+
+  .behav{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+
+  /* ---- strategy graveyard ---- */
+  .grave-frame{font-size:15px;color:var(--ink);max-width:78ch;margin:2px 0 18px}
+  .grave-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .grave{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:15px 16px 14px;display:flex;flex-direction:column}
+  .grave h4{font-size:14px;margin:0;color:var(--ink)}
+  .grave .gn{font-size:11.5px;color:var(--muted);margin:3px 0 9px}
+  .grave .gchart{margin:0 0 11px}
+  .gplaceholder{display:flex;align-items:center;justify-content:center;text-align:center;min-height:150px;
+    border:1px dashed var(--baseline);border-radius:8px;color:var(--muted);font-size:12px;padding:0 16px;background:var(--plane)}
+  .grave .gv{font-size:12px;line-height:1.45;margin-top:auto;padding:8px 10px;border-radius:6px;border:1px solid var(--border)}
+  .gv b{font-weight:600}
+  .v-neg{background:rgba(208,59,59,.07);border-color:rgba(208,59,59,.22);color:#7a1f1f}
+  .v-neg b{color:var(--critical)}
+  .v-none{background:var(--plane);color:var(--ink-2)}
+  .v-killed{background:rgba(236,131,90,.10);border-color:rgba(236,131,90,.32);color:#8a4a2b}
+  .v-killed b{color:#c8622f}
+  .v-incon{background:var(--plane);color:var(--muted);border-style:dashed}
+
+  /* ---- judgment callouts ---- */
+  .callouts{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .callout{background:var(--surface-1);border:1px solid var(--border);border-left:3px solid var(--serious);border-radius:10px;padding:20px 22px}
+  .callout .tag-j{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--serious);font-weight:600}
+  .callout h3{font-size:16px;margin:8px 0 8px;color:var(--ink)}
+  .callout p{font-size:13.5px;margin:0 0 10px}
+  .callout .metric{font-size:13px;color:var(--ink);background:var(--plane);border:1px solid var(--border);
+    border-radius:6px;padding:8px 10px;font-variant-numeric:tabular-nums}
+  .callout .metric b{color:var(--critical)}
+
+  /* ---- conclusion ---- */
+  .concl .big{font-size:19px;color:var(--ink);max-width:74ch;font-weight:500}
+  .ratio{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 0 6px}
+  .ratio .tile .v{font-size:30px}
+  footer{padding:30px 0 60px;color:var(--muted);font-size:12.5px}
+  footer .links{margin-top:8px;display:flex;gap:18px;flex-wrap:wrap}
+  code{font-family:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;font-size:12.5px;color:var(--ink-2)}
+
+  /* ---- tooltip ---- */
+  #tt{position:fixed;pointer-events:none;z-index:50;opacity:0;transition:opacity .08s;
+    background:#111;color:#fff;font-size:12px;line-height:1.4;padding:7px 9px;border-radius:6px;
+    max-width:240px;box-shadow:0 4px 14px rgba(0,0,0,.22)}
+  #tt b{color:#fff}
+  .hit{cursor:default}
+
+  @media (max-width:900px){
+    .tiles{grid-template-columns:repeat(2,1fr)}
+    .hero-grid,.behav,.callouts{grid-template-columns:1fr}
+    .passes{grid-template-columns:1fr}
+    .arch{grid-template-columns:repeat(2,1fr)}
+    .grave-grid{grid-template-columns:repeat(2,1fr)}
+    .ratio{grid-template-columns:1fr}
+    h1{font-size:28px}
+  }
+  @media (max-width:560px){
+    .grave-grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div id="tt" role="tooltip"></div>
+
+<header class="wrap">
+  <p class="eyebrow">Prediction-market research · quantitative study</p>
+  <h1>PMRA — A Falsification Study</h1>
+  <p class="lead">A forecasting harness built to test one trading hypothesis, instrumented to measure
+  itself, and used to <strong>disprove that hypothesis</strong>. This is a research artifact: the null
+  result is the finding.</p>
+
+  <div class="thesis">
+    <span class="k">Falsifiable hypothesis</span>
+    <p class="claim">A web-search LLM can estimate prediction-market outcome probabilities accurately
+    enough to be profitable <em>net of Kalshi's fees and bid-ask spread</em>.</p>
+    <p class="kill"><b>Kill condition:</b> the model must show positive Brier skill (beat a 0.25 coin
+    flip) <b>and</b> positive net-of-fee P&amp;L, in some category, at n&nbsp;≥&nbsp;30. If it can't, the
+    hypothesis is dead and no capital should move.</p>
+  </div>
+
+  <p class="verdict"><span class="x">Result: hypothesis falsified — four independent ways.</span>
+  The market is efficient at retail scale across every tested edge source. Total cost to reach a
+  complete, defensible negative: <strong>$6.97</strong> in API credits, <strong>$0</strong> capital
+  deployed.</p>
+
+  <div class="tiles" id="tiles"></div>
+</header>
+
+<!-- ======================= HERO 1: CALIBRATION ======================= -->
+<section class="wrap">
+  <p class="eyebrow">The headline finding</p>
+  <h2>The model's forecasts were worse than chance</h2>
+  <p>The measurement layer I built — not intuition — detected this. Each point is the model's predicted
+  probability against how often those markets actually resolved YES.</p>
+
+  <div class="hero-grid" style="margin-top:18px">
+    <div class="card">
+      <figure>
+        <p class="chart-title">Reliability curve — LLM forecasts vs. realized outcomes</p>
+        <p class="chart-note">claude-sonnet-4-6 · 22 resolved markets · binned; point size ∝ n</p>
+        <div id="chart-calib"></div>
+        <div class="legend">
+          <span><span class="dash"></span> perfect calibration</span>
+          <span><span class="swatch" style="background:var(--critical)"></span> model (binned)</span>
+          <span><span class="swatch" style="background:var(--muted);opacity:.5"></span> individual calls</span>
+        </div>
+        <figcaption>A calibrated forecaster's points sit on the diagonal. These don't: the model's
+        <b>60–80% calls resolved 0%</b>, and its <b>~90% calls resolved only 55%</b>. It was confident
+        and directionally wrong.</figcaption>
+      </figure>
+    </div>
+    <div class="aside">
+      <div class="card">
+        <h3>Brier 0.305</h3>
+        <p class="sub" style="margin-bottom:14px">vs. 0.25 for always guessing the base rate — a
+        <strong>negative-skill</strong> result, not merely "no edge."</p>
+        <h3>Why this is the deliverable</h3>
+        <p style="font-size:13.5px">Most quant hypotheses fail. The value isn't finding alpha — it's
+        having built the instrumentation to know, cheaply and honestly, that there was none, and stopping.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= HARNESS ======================= -->
+<section class="wrap">
+  <p class="eyebrow">What I built to test it honestly</p>
+  <h2>The measurement harness</h2>
+  <p>A full research loop — but the reusable asset is the scorekeeping, not the forecaster. The
+  recalibrator and the append-only prediction-vs-outcome store were built specifically so the hypothesis
+  <em>could be disproven</em>.</p>
+
+  <div class="arch">
+    <div class="step"><div class="n">01 · INGEST</div><div class="t">Live Kalshi discovery</div>
+      <div class="d">Series/event discovery of tradeable binary markets; MVE-parlay filtering.</div></div>
+    <div class="step"><div class="n">02 · PRICE</div><div class="t">Far-touch order-book fills</div>
+      <div class="d">Buy at the ask VWAP, sell into the bids; the 0.07·p·(1−p) fee netted into every EV.</div></div>
+    <div class="step"><div class="n">03 · ESTIMATE</div><div class="t">LLM probability</div>
+      <div class="d">Resolution-grounded prompt with web search; one probability per market, per model.</div></div>
+    <div class="step instr"><div class="n">04 · MEASURE</div><div class="t">Calibration · ROI · tracking</div>
+      <div class="d">Append-only prediction↔outcome store; Brier/log-loss, temperature-scaling
+      recalibrator, event-clustered stats, ROI net of credit spend.</div></div>
+  </div>
+
+  <p><strong>Calibration here is diagnostic infrastructure, not a fix.</strong> The temperature-scaling
+  recalibrator never reached its activation threshold (needs 50 resolved pairs; had 22), and temperature
+  scaling corrects <em>confidence</em> miscalibration — it cannot repair a <em>directional</em> skill
+  failure regardless. Its job was to make the failure measurable, and it did.</p>
+  <div class="tags">
+    <span class="tag">~4,600 LOC</span><span class="tag">29 test suites</span>
+    <span class="tag">enforced module boundaries</span><span class="tag">mypy · ruff · pre-commit</span>
+    <span class="tag">sqlite, append-only analyses</span><span class="tag">no asyncio</span>
+  </div>
+</section>
+
+<!-- ======================= FOUR PASSES ======================= -->
+<section class="wrap">
+  <p class="eyebrow">Four independent falsification passes</p>
+  <h2>Every source of edge, tested and rejected</h2>
+  <p>Forecasting skill, a bias-inversion reflex, structural arbitrage, and a large behavioral study —
+  each an independent way the hypothesis could have survived. None did.</p>
+
+  <div class="passes" style="margin-top:18px">
+    <div class="card pass">
+      <div class="lab">(a) Forecasting skill</div>
+      <div id="chart-cat"></div>
+      <figcaption style="margin-top:10px">Brier by category, both <b>above</b> the 0.25 coin-flip line —
+      uniform negative (econ 0/8, weather 1/5 on real signals). <span class="sub">Crypto and other
+      efficient categories were in-scope but produced no resolved forecasting positions to score; the
+      behavioral study (d) covers all categories at scale.</span></figcaption>
+    </div>
+
+    <div class="card pass">
+      <div class="lab">(b) Confidence-bias inversion</div>
+      <p style="font-size:13.5px;margin-bottom:2px">"The model is wrong — just fade it." In-sample,
+      inverting every signal returned <strong>+$550</strong>.</p>
+      <div class="inv">
+        <div class="num big"><b>13</b><span>raw signals</span></div>
+        <div class="arrow">→</div>
+        <div class="num small"><b>≈5</b><span>independent events</span></div>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:0">Eight of the thirteen are thresholds on a
+      single jobs report. Once effective independent n is computed, the "edge" is five correlated draws.</p>
+      <span class="verdict-chip">Killed — small-n artifact</span>
+    </div>
+
+    <div class="card pass">
+      <div class="lab">(c) Structural / taker arbitrage</div>
+      <div id="chart-arb"></div>
+      <figcaption style="margin-top:10px">Across <b>1,796</b> mutually-exclusive events: buying every
+      outcome costs <b>$1.07</b> for a $1 payout (~7% overround); selling the set yields <b>$0.95</b>.
+      <b>Zero</b> executable arbitrages. The edge inside the spread belongs to whoever posts it.</figcaption>
+    </div>
+  </div>
+
+  <!-- (d) behavioral hero -->
+  <div class="card" style="margin-top:18px">
+    <div class="lab" style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">(d) Behavioral study — 4,610 markets · 1,901 events · event-clustered</div>
+    <div class="behav">
+      <figure>
+        <p class="chart-title">Favorite–longshot bias — price vs. realized frequency</p>
+        <p class="chart-note">market mid-price (x) vs. outcome frequency (y)</p>
+        <div id="chart-behav-calib"></div>
+        <div class="legend">
+          <span><span class="dash"></span> fair pricing</span>
+          <span><span class="swatch" style="background:var(--series-1)"></span> realized (market price bucket)</span>
+        </div>
+      </figure>
+      <figure>
+        <p class="chart-title">Edge per price bucket — gross vs. net of overround + fees</p>
+        <p class="chart-note">favorable-side edge per contract; zero line marked</p>
+        <div id="chart-behav-edge"></div>
+        <div class="legend">
+          <span><span class="swatch" style="background:var(--series-1)"></span> gross edge</span>
+          <span><span class="swatch" style="background:var(--series-2)"></span> net (after cost)</span>
+        </div>
+      </figure>
+    </div>
+    <figcaption style="margin-top:14px">The favorite–longshot bias is <b>real gross</b> — longshots
+    resolve YES less often than priced, favorites more often. Net of the ~7% overround and fees it is
+    <b>fully consumed</b>: selling longshots is significantly negative (−0.058/contract, t = −5.35);
+    buying favorites is indistinguishable from zero (+0.012, t = 1.08). <b>Real signal, zero net edge.</b></figcaption>
+  </div>
+</section>
+
+<!-- ======================= STRATEGY GRAVEYARD ======================= -->
+<section class="wrap">
+  <p class="eyebrow">Strategy graveyard</p>
+  <h2>Every obvious edge, and why each one loses</h2>
+  <p class="grave-frame">These are the edges any retail participant would try. Each was tested net of the
+  ~7% overround and fees, event-clustered so correlated legs of one event count once. None survives — the
+  message is systematic elimination, not a single failed bet.</p>
+
+  <div class="grave-grid">
+    <div class="grave">
+      <h4>LLM forecasting skill</h4>
+      <p class="gn">Brier by category vs the 0.25 coin flip · weather n=8, econ n=14 resolved pairs</p>
+      <div class="gchart" id="g-fore"></div>
+      <div class="gv v-neg">Brier <b>0.29–0.33</b> &gt; 0.25 — worse than chance.
+        <span style="color:var(--muted)">Crypto: not tested (no resolved positions).</span></div>
+    </div>
+
+    <div class="grave">
+      <h4>Sell longshots</h4>
+      <p class="gn">market mid 0.01–0.50 · 804 events</p>
+      <div class="gchart" id="g-sell"></div>
+      <div class="gv v-neg">net <b>−0.058</b>/ct · t <b>−5.35</b> — significantly negative</div>
+    </div>
+
+    <div class="grave">
+      <h4>Buy favorites</h4>
+      <p class="gn">market mid 0.50–0.99 · 812 events</p>
+      <div class="gchart" id="g-buy"></div>
+      <div class="gv v-none">net <b>+0.012</b>/ct · t <b>+1.08</b> — not distinguishable from zero</div>
+    </div>
+
+    <div class="grave">
+      <h4>Buy favorites — entry timing</h4>
+      <p class="gn">net edge by entry horizon · 812 events</p>
+      <div class="gchart" id="g-hz"></div>
+      <div class="gv v-neg"><b>flips sign</b> across entry timing (open → last) — no stable edge</div>
+    </div>
+
+    <div class="grave">
+      <h4>Deep favorites (0.90–0.99)</h4>
+      <p class="gn">the nominally-significant result · 287 events (mid-life)</p>
+      <div class="gchart" id="g-deep"></div>
+      <div class="gv v-killed">nominally +0.019/ct, t <b>2.64</b> — <b>KILLED</b>: rests on just
+        <b>7 loss events</b>; +0.03-win / −0.95-loss skew invalidates the t-stat; $10 fills at 0.95+
+        unverifiable. Not a win.</div>
+    </div>
+
+    <div class="grave">
+      <h4>Near-resolution timing</h4>
+      <p class="gn">entry at the last bar before close · 427 / 443 events</p>
+      <div class="gchart" id="g-near"></div>
+      <div class="gv v-neg">the bias does <b>not</b> become exploitable near close — net −0.053 / −0.016</div>
+    </div>
+
+    <div class="grave">
+      <h4>Intraday / sub-daily timing</h4>
+      <p class="gn">open→settle micro-timing within a day</p>
+      <div class="gchart"><div class="gplaceholder">Candlestick granularity is hourly (≤3-day markets) /
+        daily (longer) — sub-daily timing is <b>not resolvable</b> from this data.</div></div>
+      <div class="gv v-incon"><b>Inconclusive — data-limited.</b> Not confirmed absent; not tested as
+        losing.</div>
+    </div>
+
+    <div class="grave">
+      <h4>Mean-reversion after sharp moves</h4>
+      <p class="gn">corr(open→mid move, mid→last move) · n=4,610</p>
+      <div class="gchart" id="g-mr"></div>
+      <div class="gv v-none">corr <b>−0.004</b> — no exploitable reversion (nor momentum)</div>
+    </div>
+
+    <div class="grave">
+      <h4>Volume vs. calibration</h4>
+      <p class="gn">market Brier by volume tier · n≈4,610</p>
+      <div class="gchart" id="g-vol"></div>
+      <div class="gv v-incon">a <b>composition artifact</b> (low-volume markets sit at extreme prices) —
+        not a tradeable signal</div>
+    </div>
+
+    <div class="grave">
+      <h4>Taker arbitrage</h4>
+      <p class="gn">mutually-exclusive outcome sets · 1,796 events</p>
+      <div class="gchart" id="g-arb"></div>
+      <div class="gv v-neg">buy-set <b>$1.07</b> / sell-set <b>$0.95</b> · <b>0</b> executable arbs — the
+        ~7% overround wall</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= JUDGMENT CALLOUTS ======================= -->
+<section class="wrap">
+  <p class="eyebrow">The part that matters</p>
+  <h2>Two moments of resisting my own motivated reasoning</h2>
+  <p>Both are cases where the easy move was to bank a positive. Neither survived scrutiny, and I said so.</p>
+
+  <div class="callouts" style="margin-top:18px">
+    <div class="callout">
+      <span class="tag-j">Caught a look-ahead leak</span>
+      <h3>A fake positive, refused</h3>
+      <p>Testing near-dated Politics markets — the one category that looked plausibly inefficient — I
+      realized all 232 resolved candidates closed <em>after</em> the model's training cutoff, so its web
+      search could read the outcome instead of forecasting it. I checked whether it did.</p>
+      <div class="metric">Leak detected in <b>6 / 6</b> probed markets · contaminated Brier 0.164
+      <b>discarded</b> · fell back to the clean free baseline: the market's own price forecasts these at
+      Brier ≈ 0.10 (efficient).</div>
+    </div>
+    <div class="callout">
+      <span class="tag-j">Killed a significant result</span>
+      <h3>t = 2.6, and still dead</h3>
+      <p>Buying deep favorites (0.90–0.99) showed a net <em>positive</em> edge at t = 2.6–2.9 —
+      nominally exploitable. I didn't take it. The entire edge rested on a handful of tail events, so the
+      Gaussian t-statistic is invalid under that payoff skew.</p>
+      <div class="metric">Edge rests on <b>7</b> loss events (2 near close) · +0.03 win / −0.95 loss
+      skew invalidates the t-stat · $10 fills at 0.95+ quotes <b>unverifiable</b>. Nominally significant,
+      not real.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= CONCLUSION ======================= -->
+<section class="wrap concl">
+  <p class="eyebrow">Conclusion</p>
+  <h2>The correct action was not to trade</h2>
+  <p class="big">Across forecasting, bias, structure, and behavior, the market is efficient at retail
+  scale, and every apparent exception is either inside the spread or inside the noise. The paper harness
+  converted what would have been a $585.85 modeled loss into a $7 lesson — the process working as
+  designed, not the project failing.</p>
+
+  <div class="ratio">
+    <div class="tile"><div class="v">$6.97</div><div class="l">total API spend to a complete negative</div></div>
+    <div class="tile good"><div class="v">$0</div><div class="l">capital ever at risk</div></div>
+    <div class="tile bad"><div class="v">$585.85</div><div class="l">modeled loss avoided</div></div>
+  </div>
+
+  <footer>
+    Static research artifact · all figures embedded from the persisted study data · no live signals.
+    Signals shown are historical evidence of the calibration failure, never actionable.
+    <div class="links">
+      <a href="PORTFOLIO_PMRA.md">PORTFOLIO_PMRA.md</a>
+      <a href="BACKTEST_NOTES.md">BACKTEST_NOTES.md</a>
+      <a href="backtest/">backtest/ (data + reproducible scripts)</a>
+    </div>
+  </footer>
+</section>
+
+<script>
+"use strict";
+const DATA = {
+  spend_total_usd:6.97, spend_campaign_usd:0.70, capital_deployed_usd:0, modeled_loss_avoided_usd:585.85,
+  forecast_brier:0.305, coinflip_baseline:0.25,
+  calib_bins:[
+    {lo:0.0,hi:0.2,pred:0.085,realized:0.250,n:4},
+    {lo:0.2,hi:0.4,pred:0.313,realized:0.000,n:3},
+    {lo:0.4,hi:0.6,pred:0.520,realized:1.000,n:1},
+    {lo:0.6,hi:0.8,pred:0.707,realized:0.000,n:3},
+    {lo:0.8,hi:1.0,pred:0.904,realized:0.545,n:11},
+  ],
+  calib_raw:[[0.04,0],[0.05,0],[0.07,0],[0.18,1],[0.28,0],[0.28,0],[0.38,0],[0.52,1],[0.62,0],
+             [0.72,0],[0.78,0],[0.85,0],[0.85,1],[0.88,0],[0.88,0],[0.90,0],[0.90,1],[0.91,1],
+             [0.92,0],[0.93,1],[0.95,1],[0.97,1]],
+  category_brier:[{cat:"econ",brier:0.290,n:14,record:"0/8 signals"},
+                  {cat:"weather",brier:0.331,n:8,record:"1/5 signals"}],
+  arbitrage:{events:1796,buy_set_cost:1.07,sell_set_yield:0.95,overround_pct:7,executable_arbs:0},
+  behavioral_meta:{markets:4610,events:1901},
+  behavioral_buckets:[
+    {mid:0.019,freq:0.011,n:817,net:-0.004},{mid:0.072,freq:0.041,n:267,net:-0.011},
+    {mid:0.147,freq:0.120,n:333,net:-0.051},{mid:0.245,freq:0.212,n:259,net:-0.088},
+    {mid:0.347,freq:0.322,n:199,net:-0.108},{mid:0.451,freq:0.438,n:217,net:-0.090},
+    {mid:0.550,freq:0.648,n:216,net:0.030},{mid:0.647,freq:0.765,n:238,net:0.015},
+    {mid:0.751,freq:0.860,n:328,net:-0.012},{mid:0.853,freq:0.932,n:544,net:0.011},
+    {mid:0.924,freq:0.986,n:360,net:0.031},{mid:0.971,freq:0.992,n:480,net:0.006},
+  ],
+  graveyard:{
+    sell_longshots:{net:-0.058,se:0.011,t:-5.35,ev:804},
+    buy_favorites:{net:0.012,se:0.011,t:1.08,ev:812},
+    fav_horizon:[{h:"open",net:-0.007},{h:"mid",net:0.012},{h:"24h",net:-0.009},{h:"last",net:-0.016}],
+    deep_fav:{net_mid:0.019,t_mid:2.64,net_last:0.023,t_last:2.90,wins:364,losses:7,ev:287},
+    near_res:{sell_longshots:{net:-0.053,t:-3.52,ev:427},buy_favorites:{net:-0.016,t:-1.20,ev:443}},
+    mean_rev:{corr:-0.004,n:4610},
+    volume_tiers:[{tier:"<$1k",brier:0.045,n:1477},{tier:"$1k–10k",brier:0.088,n:2016},{tier:"≥$10k",brier:0.126,n:1117}],
+  },
+};
+
+/* ---------- tiny SVG toolkit (no deps) ---------- */
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;}
+function txt(x,y,s,attrs){const t=el("text",Object.assign({x,y},attrs||{}));t.textContent=s;return t;}
+const C={ink:"#0b0b0b",ink2:"#52514e",muted:"#898781",grid:"#e1e0d9",base:"#c3c2b7",
+         s1:"#2a78d6",s2:"#eb6834",crit:"#d03b3b"};
+
+/* tooltip */
+const tt=document.getElementById("tt");
+function ttShow(html,ev){tt.innerHTML=html;tt.style.opacity=1;ttMove(ev);}
+function ttMove(ev){const p=14;let x=ev.clientX+p,y=ev.clientY+p;
+  if(x+tt.offsetWidth>window.innerWidth)x=ev.clientX-tt.offsetWidth-p;
+  if(y+tt.offsetHeight>window.innerHeight)y=ev.clientY-tt.offsetHeight-p;
+  tt.style.left=x+"px";tt.style.top=y+"px";}
+function ttHide(){tt.style.opacity=0;}
+function hover(node,html){node.classList.add("hit");
+  node.addEventListener("mouseenter",e=>ttShow(html,e));
+  node.addEventListener("mousemove",ttMove);
+  node.addEventListener("mouseleave",ttHide);}
+
+/* ---------- header tiles ---------- */
+(function(){
+  const tiles=[
+    {v:"4×",l:"independent falsification passes"},
+    {v:"0.305",l:"forecasting Brier · worse than a 0.25 coin flip",cls:"bad"},
+    {v:"$6.97",l:"total API spend"},
+    {v:"$0",l:"capital deployed",cls:"good"},
+    {v:"$585.85",l:"modeled loss avoided",cls:"bad"},
+  ];
+  const m=document.getElementById("tiles");
+  tiles.forEach(t=>{const d=document.createElement("div");d.className="tile"+(t.cls?" "+t.cls:"");
+    d.innerHTML=`<div class="v">${t.v}</div><div class="l">${t.l}</div>`;m.appendChild(d);});
+})();
+
+/* ---------- calibration / reliability scatter (0..1 x 0..1) ---------- */
+function renderCalib(mount,opts){
+  const W=560,H=440,mL=52,mR=18,mT=18,mB=46;
+  const pw=W-mL-mR, ph=H-mT-mB;
+  const px=v=>mL+v*pw, py=v=>mT+(1-v)*ph;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img","aria-label":opts.aria});
+  // gridlines + ticks
+  [0,.25,.5,.75,1].forEach(t=>{
+    svg.appendChild(el("line",{x1:px(0),y1:py(t),x2:px(1),y2:py(t),stroke:C.grid,"stroke-width":1}));
+    svg.appendChild(txt(mL-8,py(t)+4,t.toFixed(2),{fill:C.muted,"font-size":11,"text-anchor":"end"}));
+    svg.appendChild(txt(px(t),H-mB+18,t.toFixed(2),{fill:C.muted,"font-size":11,"text-anchor":"middle"}));
+  });
+  // axis labels
+  svg.appendChild(txt(mL+pw/2,H-6,opts.xlab,{fill:C.ink2,"font-size":12,"text-anchor":"middle"}));
+  const yl=txt(14,mT+ph/2,opts.ylab,{fill:C.ink2,"font-size":12,"text-anchor":"middle"});
+  yl.setAttribute("transform",`rotate(-90 14 ${mT+ph/2})`);svg.appendChild(yl);
+  // perfect-calibration diagonal
+  svg.appendChild(el("line",{x1:px(0),y1:py(0),x2:px(1),y2:py(1),stroke:C.base,"stroke-width":2,"stroke-dasharray":"5 5"}));
+  svg.appendChild(txt(px(.82),py(.9),"fair",{fill:C.muted,"font-size":11}));
+  // raw individual points (faint)
+  if(opts.raw){opts.raw.forEach(([x,y])=>{
+    const jy=y===1?0.985:0.015, jx=x+(Math.random()-.5)*0.01;
+    svg.appendChild(el("circle",{cx:px(jx),cy:py(jy),r:3,fill:C.muted,"fill-opacity":.32}));
+  });}
+  // line through points
+  const pts=opts.points;
+  let d="";pts.forEach((p,i)=>{d+=(i?" L":"M")+px(p.x)+" "+py(p.y);});
+  svg.appendChild(el("path",{d,fill:"none",stroke:opts.color,"stroke-width":2,"stroke-opacity":.5}));
+  // markers
+  pts.forEach(p=>{
+    const r=opts.sizeByN?Math.max(5,Math.min(15,Math.sqrt(p.n)*2.4)):6;
+    const c=el("circle",{cx:px(p.x),cy:py(p.y),r,fill:opts.color,stroke:"#fcfcfb","stroke-width":2});
+    hover(c,opts.tip(p));svg.appendChild(c);
+  });
+  // optional annotations
+  (opts.annos||[]).forEach(a=>{
+    svg.appendChild(txt(px(a.x),py(a.y)+a.dy,a.t,{fill:C.ink2,"font-size":11,"text-anchor":a.anchor||"middle"}));
+  });
+  // brier badge
+  if(opts.badge){
+    const g=el("g",{});g.appendChild(el("rect",{x:px(0)+8,y:py(1)+2,width:150,height:34,rx:6,fill:"#fff",stroke:C.border||"rgba(11,11,11,.1)"}));
+    g.appendChild(txt(px(0)+16,py(1)+17,opts.badge.l1,{fill:C.crit,"font-size":13,"font-weight":600}));
+    g.appendChild(txt(px(0)+16,py(1)+30,opts.badge.l2,{fill:C.muted,"font-size":10.5}));
+    svg.appendChild(g);
+  }
+  mount.appendChild(svg);
+}
+
+/* ---------- vertical bars with baseline/reference rule ---------- */
+function renderBars(mount,opts){
+  const W=520,H=340,mL=54,mR=16,mT=20,mB=54;
+  const pw=W-mL-mR, ph=H-mT-mB, n=opts.bars.length;
+  const yMax=opts.yMax, yMin=opts.yMin||0;
+  const py=v=>mT+(1-(v-yMin)/(yMax-yMin))*ph;
+  const bw=Math.min(96,pw/n*0.5), gap=pw/n;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img","aria-label":opts.aria});
+  (opts.yticks||[]).forEach(t=>{
+    svg.appendChild(el("line",{x1:mL,y1:py(t),x2:mL+pw,y2:py(t),stroke:C.grid,"stroke-width":1}));
+    svg.appendChild(txt(mL-8,py(t)+4,opts.yfmt?opts.yfmt(t):t,{fill:C.muted,"font-size":11,"text-anchor":"end"}));
+  });
+  if(opts.ylab){const yl=txt(14,mT+ph/2,opts.ylab,{fill:C.ink2,"font-size":12,"text-anchor":"middle"});
+    yl.setAttribute("transform",`rotate(-90 14 ${mT+ph/2})`);svg.appendChild(yl);}
+  opts.bars.forEach((b,i)=>{
+    const cx=mL+gap*(i+0.5), x=cx-bw/2, y=py(b.value), y0=py(Math.max(yMin,0));
+    const top=Math.min(y,y0), h=Math.abs(y-y0);
+    const rect=el("rect",{x,y:top,width:bw,height:Math.max(1,h),rx:4,fill:b.color||opts.color});
+    hover(rect,b.tip);svg.appendChild(rect);
+    if(b.dlabel!==undefined)svg.appendChild(txt(cx,top-7,b.dlabel,{fill:C.ink,"font-size":12.5,"font-weight":600,"text-anchor":"middle"}));
+    svg.appendChild(txt(cx,H-mB+18,b.label,{fill:C.ink2,"font-size":12,"text-anchor":"middle"}));
+    if(b.sub)svg.appendChild(txt(cx,H-mB+34,b.sub,{fill:C.muted,"font-size":11,"text-anchor":"middle"}));
+  });
+  // reference rule
+  if(opts.rule){
+    svg.appendChild(el("line",{x1:mL,y1:py(opts.rule.value),x2:mL+pw,y2:py(opts.rule.value),
+      stroke:opts.rule.color||C.base,"stroke-width":2,"stroke-dasharray":"5 5"}));
+    svg.appendChild(txt(mL+pw,py(opts.rule.value)-6,opts.rule.label,{fill:opts.rule.color||C.muted,"font-size":11,"text-anchor":"end"}));
+  }
+  mount.appendChild(svg);
+}
+
+/* ---------- grouped bars around a zero line (gross vs net) ---------- */
+function renderGrouped(mount,opts){
+  const W=560,H=360,mL=50,mR=14,mT=18,mB=54;
+  const pw=W-mL-mR, ph=H-mT-mB, n=opts.groups.length;
+  let vals=[];opts.groups.forEach(g=>{vals.push(g.gross,g.net);});
+  const yMax=Math.max.apply(null,vals.concat([0])),yMin=Math.min.apply(null,vals.concat([0]));
+  const pad=(yMax-yMin)*0.12;const hi=yMax+pad,lo=yMin-pad;
+  const py=v=>mT+(1-(v-lo)/(hi-lo))*ph;
+  const gw=pw/n, bw=Math.min(11,gw*0.34);
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img","aria-label":opts.aria});
+  [hi,(hi+lo)/2,0,lo].forEach(t=>{});
+  // y ticks at sensible marks
+  const ticks=[];for(let v=Math.ceil(lo/0.05)*0.05;v<=hi+1e-9;v+=0.05)ticks.push(+v.toFixed(2));
+  ticks.forEach(t=>{
+    svg.appendChild(el("line",{x1:mL,y1:py(t),x2:mL+pw,y2:py(t),stroke:C.grid,"stroke-width":1}));
+    svg.appendChild(txt(mL-8,py(t)+4,t.toFixed(2),{fill:C.muted,"font-size":10.5,"text-anchor":"end"}));
+  });
+  // zero line emphasized
+  svg.appendChild(el("line",{x1:mL,y1:py(0),x2:mL+pw,y2:py(0),stroke:C.base,"stroke-width":2}));
+  const yl=txt(12,mT+ph/2,opts.ylab,{fill:C.ink2,"font-size":12,"text-anchor":"middle"});
+  yl.setAttribute("transform",`rotate(-90 12 ${mT+ph/2})`);svg.appendChild(yl);
+  const y0=py(0);
+  opts.groups.forEach((g,i)=>{
+    const cx=mL+gw*(i+0.5);
+    [["gross",g.gross,C.s1,-1],["net",g.net,C.s2,1]].forEach(([k,v,col,side])=>{
+      const x=cx+side*(bw/2+0.8)-bw/2;
+      const y=py(v),top=Math.min(y,y0),h=Math.max(1,Math.abs(y-y0));
+      const r=el("rect",{x,y:top,width:bw,height:h,rx:2,fill:col});
+      hover(r,`<b>mid ${g.mid.toFixed(2)}</b> · n=${g.n}<br>gross edge ${(g.gross>=0?"+":"")}${g.gross.toFixed(3)}<br>net edge ${(g.net>=0?"+":"")}${g.net.toFixed(3)} / contract`);
+      svg.appendChild(r);
+    });
+    if(i%2===0)svg.appendChild(txt(cx,H-mB+18,g.mid.toFixed(2),{fill:C.muted,"font-size":10.5,"text-anchor":"middle"}));
+  });
+  svg.appendChild(txt(mL+pw/2,H-6,opts.xlab,{fill:C.ink2,"font-size":12,"text-anchor":"middle"}));
+  mount.appendChild(svg);
+}
+
+/* ---------- compact single net bar with ±SE whisker + zero line ---------- */
+function renderNetBar(mount,o){
+  const W=300,H=168,mL=46,mR=14,mT=14,mB=24,pw=W-mL-mR,ph=H-mT-mB;
+  const py=v=>mT+(1-(v-o.yMin)/(o.yMax-o.yMin))*ph;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img","aria-label":o.aria});
+  o.yticks.forEach(t=>{
+    svg.appendChild(el("line",{x1:mL,y1:py(t),x2:mL+pw,y2:py(t),stroke:t===0?C.base:C.grid,"stroke-width":t===0?2:1}));
+    svg.appendChild(txt(mL-6,py(t)+3,o.fmt(t),{fill:C.muted,"font-size":10,"text-anchor":"end"}));
+  });
+  const cx=mL+pw/2,bw=56,y0=py(0),y=py(o.value),top=Math.min(y,y0),h=Math.max(1,Math.abs(y-y0));
+  const r=el("rect",{x:cx-bw/2,y:top,width:bw,height:h,rx:3,fill:o.color});
+  hover(r,o.tip);svg.appendChild(r);
+  if(o.se){const hi=py(o.value+o.se),lo=py(o.value-o.se);
+    svg.appendChild(el("line",{x1:cx,y1:hi,x2:cx,y2:lo,stroke:C.ink,"stroke-width":1.5}));
+    [hi,lo].forEach(yy=>svg.appendChild(el("line",{x1:cx-7,y1:yy,x2:cx+7,y2:yy,stroke:C.ink,"stroke-width":1.5})));}
+  const cap=o.se||0;
+  const ly=o.value>=0?py(o.value+cap)-7:py(o.value-cap)+15;
+  svg.appendChild(txt(cx,ly,(o.value>=0?"+":"")+o.value.toFixed(3),{fill:C.ink,"font-size":12.5,"font-weight":600,"text-anchor":"middle"}));
+  mount.appendChild(svg);
+}
+
+/* ---------- horizon strip: points around a zero line ---------- */
+function renderHorizonStrip(mount,o){
+  const W=300,H=168,mL=44,mR=14,mT=14,mB=28,n=o.points.length,pw=W-mL-mR,ph=H-mT-mB;
+  const px=i=>mL+(pw*i/(n-1)), py=v=>mT+(1-(v-o.yMin)/(o.yMax-o.yMin))*ph;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,role:"img","aria-label":o.aria});
+  o.yticks.forEach(t=>{
+    svg.appendChild(el("line",{x1:mL,y1:py(t),x2:mL+pw,y2:py(t),stroke:t===0?C.base:C.grid,"stroke-width":t===0?2:1}));
+    svg.appendChild(txt(mL-6,py(t)+3,o.fmt(t),{fill:C.muted,"font-size":10,"text-anchor":"end"}));
+  });
+  let d="";o.points.forEach((p,i)=>d+=(i?" L":"M")+px(i)+" "+py(p.net));
+  svg.appendChild(el("path",{d,fill:"none",stroke:C.muted,"stroke-width":1.5}));
+  o.points.forEach((p,i)=>{
+    const c=el("circle",{cx:px(i),cy:py(p.net),r:5,fill:p.net>=0?C.s1:C.crit,stroke:"#fcfcfb","stroke-width":1.5});
+    hover(c,`${p.h}: net ${(p.net>=0?"+":"")}${p.net.toFixed(3)}/ct`);svg.appendChild(c);
+    svg.appendChild(txt(px(i),H-mB+16,p.h,{fill:C.muted,"font-size":10,"text-anchor":"middle"}));
+  });
+  mount.appendChild(svg);
+}
+
+/* ================= render all ================= */
+// (hero) forecasting calibration
+renderCalib(document.getElementById("chart-calib"),{
+  aria:"LLM forecast calibration curve, points off the diagonal, Brier 0.305",
+  xlab:"model predicted probability", ylab:"realized outcome frequency",
+  color:C.crit, sizeByN:true, raw:DATA.calib_raw, badge:{l1:"Brier 0.305",l2:"vs 0.25 coin-flip baseline"},
+  points:DATA.calib_bins.map(b=>({x:b.pred,y:b.realized,n:b.n,lo:b.lo,hi:b.hi})),
+  annos:[{x:0.707,y:0.0,dy:-10,t:"0.6–0.8 → 0%",anchor:"middle"},
+         {x:0.904,y:0.545,dy:-14,t:"~0.9 → 55%",anchor:"middle"}],
+  tip:p=>`predicted <b>${Math.round(p.lo*100)}–${Math.round(p.hi*100)}%</b> (mean ${(p.x*100).toFixed(0)}%)<br>realized <b>${(p.y*100).toFixed(0)}%</b> YES · n=${p.n}`,
+});
+
+// (a) category brier
+renderBars(document.getElementById("chart-cat"),{
+  aria:"Brier score by category, both above the 0.25 baseline",
+  yMax:0.4, yticks:[0,0.1,0.2,0.3,0.4], ylab:"Brier (lower = better)", color:C.crit,
+  rule:{value:0.25,label:"0.25 coin flip",color:C.muted},
+  bars:DATA.category_brier.map(c=>({
+    label:c.cat,sub:c.record,value:c.brier,dlabel:c.brier.toFixed(3),
+    tip:`<b>${c.cat}</b> · n=${c.n}<br>Brier ${c.brier.toFixed(3)} (worse than 0.25)<br>signals ${c.record}`})),
+});
+
+// (c) arbitrage
+renderBars(document.getElementById("chart-arb"),{
+  aria:"Cost to buy the full outcome set is 1.07, sell yields 0.95, versus a 1 dollar payout",
+  yMax:1.2, yMin:0, yticks:[0,0.5,1.0], yfmt:t=>"$"+t.toFixed(2), ylab:"$ per $1 payout",
+  rule:{value:1.0,label:"$1 payout (break-even)",color:C.base},
+  bars:[
+    {label:"buy the set",sub:"~7% overround",value:1.07,dlabel:"$1.07",color:C.crit,
+     tip:"Buy every outcome's YES:<br><b>$1.07</b> to guarantee $1 — you lose the overround."},
+    {label:"sell the set",sub:"0 executable",value:0.95,dlabel:"$0.95",color:C.s1,
+     tip:"Sell every outcome's YES:<br>collect <b>$0.95</b> against a $1 obligation — no arb."},
+  ],
+});
+
+// (d) behavioral calibration curve
+renderCalib(document.getElementById("chart-behav-calib"),{
+  aria:"Favorite-longshot bias: realized frequency vs market price, S-shaped around the diagonal",
+  xlab:"market mid-price", ylab:"realized YES frequency", color:C.s1, sizeByN:false,
+  points:DATA.behavioral_buckets.map(b=>({x:b.mid,y:b.freq,n:b.n})),
+  tip:p=>`priced <b>${(p.x*100).toFixed(1)}%</b><br>resolved YES <b>${(p.y*100).toFixed(1)}%</b> · n=${p.n}`,
+});
+
+// (d) gross vs net edge
+renderGrouped(document.getElementById("chart-behav-edge"),{
+  aria:"Gross edge is positive but net edge after overround and fees sits at or below zero across buckets",
+  xlab:"market mid-price bucket", ylab:"edge per contract",
+  groups:DATA.behavioral_buckets.map(b=>({mid:b.mid,n:b.n,gross:Math.abs(b.freq-b.mid),net:b.net})),
+});
+
+/* ---------- strategy graveyard ---------- */
+const G=DATA.graveyard;
+renderBars(document.getElementById("g-fore"),{
+  aria:"Brier by category, both above the 0.25 baseline",
+  yMax:0.4,yticks:[0,0.2,0.4],ylab:"Brier",color:C.crit,rule:{value:0.25,label:"0.25",color:C.muted},
+  bars:DATA.category_brier.map(c=>({label:c.cat,value:c.brier,dlabel:c.brier.toFixed(3),
+    tip:`<b>${c.cat}</b> · n=${c.n} · Brier ${c.brier.toFixed(3)} (worse than 0.25)`})),
+});
+renderNetBar(document.getElementById("g-sell"),{aria:"sell longshots net −0.058, significantly negative",
+  value:G.sell_longshots.net,se:G.sell_longshots.se,color:C.crit,
+  yMin:-0.08,yMax:0.03,yticks:[-0.06,-0.03,0],fmt:t=>t.toFixed(2),
+  tip:`sell longshots (0.01–0.50)<br>net <b>${G.sell_longshots.net.toFixed(3)}</b>/ct · t ${G.sell_longshots.t} · ${G.sell_longshots.ev} events`});
+renderNetBar(document.getElementById("g-buy"),{aria:"buy favorites net +0.012, not distinguishable from zero",
+  value:G.buy_favorites.net,se:G.buy_favorites.se,color:C.muted,
+  yMin:-0.03,yMax:0.045,yticks:[-0.02,0,0.02,0.04],fmt:t=>t.toFixed(2),
+  tip:`buy favorites (0.50–0.99)<br>net <b>+${G.buy_favorites.net.toFixed(3)}</b>/ct · t ${G.buy_favorites.t} · ${G.buy_favorites.ev} events`});
+renderHorizonStrip(document.getElementById("g-hz"),{aria:"buy-favorites net edge flips sign across entry horizons",
+  points:G.fav_horizon,yMin:-0.03,yMax:0.03,yticks:[-0.02,0,0.02],fmt:t=>t.toFixed(2)});
+renderNetBar(document.getElementById("g-deep"),{aria:"deep favorites nominal +0.019 but killed",
+  value:G.deep_fav.net_mid,se:0.008,color:"#ec835a",
+  yMin:-0.01,yMax:0.04,yticks:[0,0.02,0.04],fmt:t=>t.toFixed(2),
+  tip:`deep favorites (0.90–0.99)<br>nominal +${G.deep_fav.net_mid.toFixed(3)}/ct · t ${G.deep_fav.t_mid}<br>${G.deep_fav.wins} wins / <b>${G.deep_fav.losses} losses</b> — killed`});
+renderBars(document.getElementById("g-near"),{aria:"near resolution, both sides net-negative",
+  yMin:-0.08,yMax:0.01,yticks:[-0.06,-0.03,0],ylab:"net/ct",color:C.crit,yfmt:t=>t.toFixed(2),
+  bars:[
+    {label:"sell LS",value:G.near_res.sell_longshots.net,dlabel:G.near_res.sell_longshots.net.toFixed(3),
+     tip:`sell longshots @ last bar<br>net <b>${G.near_res.sell_longshots.net}</b> · t ${G.near_res.sell_longshots.t} · ${G.near_res.sell_longshots.ev} ev`},
+    {label:"buy fav",value:G.near_res.buy_favorites.net,dlabel:G.near_res.buy_favorites.net.toFixed(3),
+     tip:`buy favorites @ last bar<br>net <b>${G.near_res.buy_favorites.net}</b> · t ${G.near_res.buy_favorites.t} · ${G.near_res.buy_favorites.ev} ev`},
+  ]});
+renderNetBar(document.getElementById("g-mr"),{aria:"mean-reversion correlation near zero",
+  value:G.mean_rev.corr,se:0,color:C.muted,
+  yMin:-0.3,yMax:0.3,yticks:[-0.3,0,0.3],fmt:t=>t.toFixed(1),
+  tip:`corr(open→mid, mid→last) = <b>${G.mean_rev.corr}</b> (n=${G.mean_rev.n})`});
+renderBars(document.getElementById("g-vol"),{aria:"market Brier by volume tier",
+  yMax:0.15,yticks:[0,0.05,0.10,0.15],ylab:"Brier",color:C.s1,yfmt:t=>t.toFixed(2),
+  bars:G.volume_tiers.map(v=>({label:v.tier,value:v.brier,dlabel:v.brier.toFixed(3),
+    tip:`<b>${v.tier}</b> · Brier ${v.brier} (n=${v.n})`}))});
+renderBars(document.getElementById("g-arb"),{aria:"buy set costs 1.07, sell set yields 0.95, vs a 1 dollar payout",
+  yMax:1.2,yMin:0,yticks:[0,0.5,1.0],yfmt:t=>"$"+t.toFixed(2),rule:{value:1.0,label:"$1",color:C.base},
+  bars:[
+    {label:"buy set",value:DATA.arbitrage.buy_set_cost,dlabel:"$1.07",color:C.crit,tip:"buy every YES:<br><b>$1.07</b> for a $1 payout"},
+    {label:"sell set",value:DATA.arbitrage.sell_set_yield,dlabel:"$0.95",color:C.s1,tip:"sell every YES:<br>collect <b>$0.95</b> vs $1 obligation"},
+  ]});
+</script>
+</body>
+</html>
