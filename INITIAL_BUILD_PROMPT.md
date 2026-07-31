@@ -1,3 +1,5 @@
+> **Note:** early build doc from when this was framed as a trading tool. See [README.md](README.md) and [dashboard.html](dashboard.html) for the current framing — a falsification study.
+
 # Initial Build Prompt — Phase 1 MVP
 
 Paste the section below the divider into a new Claude Code session from the project root (after all MD files are in place).

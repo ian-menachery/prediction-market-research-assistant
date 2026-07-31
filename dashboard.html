@@ -178,19 +178,22 @@
   </div>
 
   <p class="verdict"><span class="x">Result: hypothesis falsified — four independent ways.</span>
-  The market is efficient at retail scale across every tested edge source. Total cost to reach a
-  complete, defensible negative: <strong>$6.97</strong> in API credits, <strong>$0</strong> capital
-  deployed.</p>
+  The market is efficient at retail scale across every tested edge source; the conclusion rests on the
+  statistically-powered 4,610-market behavioral study (the small forecasting sample only raised the
+  question). Total cost to reach a complete, defensible negative: <strong>$6.97</strong> in API credits,
+  <strong>$0</strong> capital deployed.</p>
 
   <div class="tiles" id="tiles"></div>
 </header>
 
 <!-- ======================= HERO 1: CALIBRATION ======================= -->
 <section class="wrap">
-  <p class="eyebrow">The headline finding</p>
-  <h2>The model's forecasts were worse than chance</h2>
-  <p>The measurement layer I built — not intuition — detected this. Each point is the model's predicted
-  probability against how often those markets actually resolved YES.</p>
+  <p class="eyebrow">The starting anomaly — small sample</p>
+  <h2>On a small sample, the forecasts landed worse than chance — so I built a powered test</h2>
+  <p>The measurement layer I built — not intuition — flagged this. Each point is the model's predicted
+  probability against how often those markets actually resolved YES. This resolved set is small (n≈22),
+  so it is <strong>suggestive, not conclusive</strong> — which is exactly why the statistically-powered
+  behavioral study further down exists.</p>
 
   <div class="hero-grid" style="margin-top:18px">
     <div class="card">
@@ -204,18 +207,21 @@
           <span><span class="swatch" style="background:var(--muted);opacity:.5"></span> individual calls</span>
         </div>
         <figcaption>A calibrated forecaster's points sit on the diagonal. These don't: the model's
-        <b>60–80% calls resolved 0%</b>, and its <b>~90% calls resolved only 55%</b>. It was confident
-        and directionally wrong.</figcaption>
+        <b>60–80% calls resolved 0%</b>, and its <b>~90% calls resolved only 55%</b> — confident and
+        directionally wrong. <b>Caveat:</b> small resolved sample (n≈22) — suggestive, not conclusive;
+        the statistically-powered null is the 4,610-market behavioral study below.</figcaption>
       </figure>
     </div>
     <div class="aside">
       <div class="card">
-        <h3>Brier 0.305</h3>
-        <p class="sub" style="margin-bottom:14px">vs. 0.25 for always guessing the base rate — a
-        <strong>negative-skill</strong> result, not merely "no edge."</p>
+        <h3>Brier 0.305 <span style="font-weight:400;color:var(--muted);font-size:13px">(n=22)</span></h3>
+        <p class="sub" style="margin-bottom:14px">On this small resolved sample, worse than the 0.25 of a
+        coin flip — <strong>suggestive, not settled proof</strong>. It raised the question; the powered
+        study answered it.</p>
         <h3>Why this is the deliverable</h3>
         <p style="font-size:13.5px">Most quant hypotheses fail. The value isn't finding alpha — it's
-        having built the instrumentation to know, cheaply and honestly, that there was none, and stopping.</p>
+        distrusting a small, promising-looking sample, building the powered test to check it, and
+        stopping when the data says stop.</p>
       </div>
     </div>
   </div>
@@ -257,16 +263,18 @@
   <p class="eyebrow">Four independent falsification passes</p>
   <h2>Every source of edge, tested and rejected</h2>
   <p>Forecasting skill, a bias-inversion reflex, structural arbitrage, and a large behavioral study —
-  each an independent way the hypothesis could have survived. None did.</p>
+  each an independent way the hypothesis could have survived. None did. They are <strong>not
+  co-equal</strong>: the 4,610-market behavioral study (d) is the statistically-powered one that carries
+  the conclusion; the small forecasting sample (a) only raised the question.</p>
 
   <div class="passes" style="margin-top:18px">
     <div class="card pass">
       <div class="lab">(a) Forecasting skill</div>
       <div id="chart-cat"></div>
-      <figcaption style="margin-top:10px">Brier by category, both <b>above</b> the 0.25 coin-flip line —
-      uniform negative (econ 0/8, weather 1/5 on real signals). <span class="sub">Crypto and other
-      efficient categories were in-scope but produced no resolved forecasting positions to score; the
-      behavioral study (d) covers all categories at scale.</span></figcaption>
+      <figcaption style="margin-top:10px">Brier by category, both <b>above</b> the 0.25 coin-flip line
+      (econ 0/8, weather 1/5). <b>Small sample (n=8/14) — suggestive, not conclusive</b>; the powered null
+      is the behavioral study (d). <span class="sub">Crypto/other categories produced no resolved
+      forecasting positions to score.</span></figcaption>
     </div>
 
     <div class="card pass">
@@ -287,14 +295,15 @@
       <div class="lab">(c) Structural / taker arbitrage</div>
       <div id="chart-arb"></div>
       <figcaption style="margin-top:10px">Across <b>1,796</b> mutually-exclusive events: buying every
-      outcome costs <b>$1.07</b> for a $1 payout (~7% overround); selling the set yields <b>$0.95</b>.
-      <b>Zero</b> executable arbitrages. The edge inside the spread belongs to whoever posts it.</figcaption>
+      outcome costs <b>$1.07</b> for a $1 payout (a ~7% <b>overround</b> — the exchange's built-in margin,
+      like a casino's house edge); selling the set yields <b>$0.95</b>. <b>Zero</b> executable
+      arbitrages. The edge inside the spread belongs to whoever posts it.</figcaption>
     </div>
   </div>
 
   <!-- (d) behavioral hero -->
   <div class="card" style="margin-top:18px">
-    <div class="lab" style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">(d) Behavioral study — 4,610 markets · 1,901 events · event-clustered</div>
+    <div class="lab" style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">(d) Behavioral study — 4,610 markets · 1,901 events · event-clustered — <span style="color:var(--series-1)">the load-bearing result</span></div>
     <div class="behav">
       <figure>
         <p class="chart-title">Favorite–longshot bias — price vs. realized frequency</p>
@@ -317,8 +326,9 @@
     </div>
     <figcaption style="margin-top:14px">The favorite–longshot bias is <b>real gross</b> — longshots
     resolve YES less often than priced, favorites more often. Net of the ~7% overround and fees it is
-    <b>fully consumed</b>: selling longshots is significantly negative (−0.058/contract, t = −5.35);
-    buying favorites is indistinguishable from zero (+0.012, t = 1.08). <b>Real signal, zero net edge.</b></figcaption>
+    <b>fully consumed</b>: selling longshots is significantly negative (−0.058 net per contract,
+    t = −5.35 — a <em>t</em> beyond ±2 means the result is unlikely to be chance); buying favorites is
+    indistinguishable from zero (+0.012, t = 1.08). <b>Real signal, zero net edge.</b></figcaption>
   </div>
 </section>
 
@@ -327,15 +337,17 @@
   <p class="eyebrow">Strategy graveyard</p>
   <h2>Every obvious edge, and why each one loses</h2>
   <p class="grave-frame">These are the edges any retail participant would try. Each was tested net of the
-  ~7% overround and fees, event-clustered so correlated legs of one event count once. None survives — the
-  message is systematic elimination, not a single failed bet.</p>
+  ~7% overround and fees, event-clustered so correlated legs of one event count once (values are
+  <b>net/ct</b> = net profit per contract). None survives — the message is systematic elimination, not a
+  single failed bet.</p>
 
   <div class="grave-grid">
     <div class="grave">
       <h4>LLM forecasting skill</h4>
       <p class="gn">Brier by category vs the 0.25 coin flip · weather n=8, econ n=14 resolved pairs</p>
       <div class="gchart" id="g-fore"></div>
-      <div class="gv v-neg">Brier <b>0.29–0.33</b> &gt; 0.25 — worse than chance.
+      <div class="gv v-neg">Brier <b>0.29–0.33</b> &gt; 0.25 on a <b>small sample</b> (n=8/14) —
+        suggestive, not the load-bearing result.
         <span style="color:var(--muted)">Crypto: not tested (no resolved positions).</span></div>
     </div>
 
@@ -445,9 +457,11 @@
   <p class="eyebrow">Conclusion</p>
   <h2>The correct action was not to trade</h2>
   <p class="big">Across forecasting, bias, structure, and behavior, the market is efficient at retail
-  scale, and every apparent exception is either inside the spread or inside the noise. The paper harness
-  converted what would have been a $585.85 modeled loss into a $7 lesson — the process working as
-  designed, not the project failing.</p>
+  scale, and every apparent exception is either inside the spread or inside the noise. The conclusion
+  rests on the statistically-powered 4,610-market behavioral study — not the small forecasting sample.
+  Recognizing that 13 signals across ~5 correlated events was far too little to conclude anything is
+  exactly why that powered study exists: a deliberate self-correction, not an afterthought. The process
+  worked as designed — a cheap, defensible "no," with $0 ever at risk.</p>
 
   <div class="ratio">
     <div class="tile"><div class="v">$6.97</div><div class="l">total API spend to a complete negative</div></div>
@@ -468,7 +482,7 @@
 <script>
 "use strict";
 const DATA = {
-  spend_total_usd:6.97, spend_campaign_usd:0.70, capital_deployed_usd:0, modeled_loss_avoided_usd:585.85,
+  spend_total_usd:6.97, spend_campaign_usd:0.70, capital_deployed_usd:0,
   forecast_brier:0.305, coinflip_baseline:0.25,
   calib_bins:[
     {lo:0.0,hi:0.2,pred:0.085,realized:0.250,n:4},
@@ -527,7 +541,7 @@ function hover(node,html){node.classList.add("hit");
 (function(){
   const tiles=[
     {v:"4×",l:"independent falsification passes"},
-    {v:"0.305",l:"forecasting Brier · worse than a 0.25 coin flip",cls:"bad"},
+    {v:"4,610",l:"markets in the powered behavioral study"},
     {v:"$6.97",l:"total API spend"},
     {v:"$0",l:"capital deployed",cls:"good"},
   ];
