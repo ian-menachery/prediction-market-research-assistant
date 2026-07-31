@@ -51,6 +51,20 @@ it.
 
 *Strategy graveyard: every obvious edge a retail participant would try, each tested net of the ~7% overround (the exchange's built-in margin) — a wall of systematic elimination, not a single failed bet.*
 
+## Résumé blurb
+
+**▶ Live study (no clone or run needed): https://ian-menachery.github.io/prediction-market-research-assistant/**
+
+A copy-paste summary for a résumé or portfolio:
+
+> **PMRA — prediction-market falsification study.** Tested whether a web-search LLM could beat Kalshi's
+> prices net of fees; distrusted a promising but under-powered forecasting sample (n=22) and built a
+> statistically-powered **4,610-market behavioral study** (event-clustered, net-of-overround) that carried
+> the null — the favorite-longshot bias is real *gross* but fully consumed by the spread. Caught a
+> look-ahead data leak that was faking a positive and killed a t=2.6 result whose payoff skew invalidated
+> the statistic; deployed **$0 capital**. Reached a complete, defensible "no edge" conclusion for under
+> $7 in API spend. → live dashboard above · narrative in [PORTFOLIO_PMRA.md](PORTFOLIO_PMRA.md).
+
 > **Disclaimer:** estimates came from an LLM and are not financial advice; the tool is read-only against
 > the exchanges and never places orders. It is a research harness, not a product.
 
