@@ -50,7 +50,7 @@ function App() {
           <div className="tabs">
             <span className={"tab" + (view === "markets" ? " active" : "")} onClick={() => setView("markets")}>Markets</span>
             <span className={"tab" + (view === "scan" ? " active" : "")} onClick={() => setView("scan")}>Scan (EV)</span>
-            <span className={"tab" + (view === "signals" ? " active" : "")} onClick={() => setView("signals")}>Signals</span>
+            <span className={"tab" + (view === "signals" ? " active" : "")} onClick={() => setView("signals")}>Predictions</span>
             <span className={"tab" + (view === "performance" ? " active" : "")} onClick={() => setView("performance")}>Performance</span>
             <span className={"tab" + (view === "calibration" ? " active" : "")} onClick={() => setView("calibration")}>Calibration</span>
             <span className={"tab" + (view === "leaderboard" ? " active" : "")} onClick={() => setView("leaderboard")}>Leaderboard</span>
