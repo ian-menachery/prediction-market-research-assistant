@@ -1,4 +1,4 @@
-> **Note:** early build doc from when this was framed as a trading tool. See [README.md](README.md) and [dashboard.html](dashboard.html) for the current framing — a falsification study.
+> **Note:** early build doc from when this was framed as a trading tool. See [README.md](README.md) and [index.html](index.html) for the current framing — a falsification study.
 
 # Architecture
 

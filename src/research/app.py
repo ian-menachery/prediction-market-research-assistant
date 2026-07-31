@@ -87,8 +87,8 @@ def index() -> Any:
     if (_FRONTEND_DIR / "index.html").exists():
         return send_from_directory(_FRONTEND_DIR, "index.html")
     return (
-        "<h1>Polymarket Research Copilot</h1>"
-        "<p>API is up. The frontend (frontend/index.html) is the next build slice.</p>"
+        "<h1>PMRA — Prediction-Market Research Assistant</h1>"
+        "<p>API is up. The web UI is served from frontend/index.html.</p>"
         '<p>Try <a href="/api/health">/api/health</a>.</p>'
     )
 

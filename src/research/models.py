@@ -1,4 +1,4 @@
-"""Pydantic data models for the Polymarket Claude Research Copilot.
+"""Pydantic data models for PMRA (Prediction-Market Research Assistant).
 
 All probabilities are stored as floats in the 0-1 range; the frontend renders
 them as percentages. Market IDs are always strings. See ARCHITECTURE.md for the

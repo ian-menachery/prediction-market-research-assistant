@@ -117,15 +117,16 @@ cp .env.example .env     # set LLM_PROVIDER=anthropic + ANTHROPIC_API_KEY (and K
 make run                 # → http://localhost:5000   (PYTHONPATH=src python -m research.app)
 ```
 On this box `python`/`py` aren't on PATH; use `$LOCALAPPDATA/Programs/Python/Python312/python.exe` with
-`PYTHONPATH=src`. To keep it running unattended (survives logoff), the owner runs a Windows
-`schtasks /SC ONLOGON` task pointing at `run_copilot.bat`.
+`PYTHONPATH=src`. (The old unattended-launcher `.bat` files were removed in the recruiter-finalization
+pass; run `make run` manually.)
 
 ## Project structure
 ```
 PMRA/                         ← folder (was polymarket-claude)
 ├── CLAUDE.md                 ← you are here
+├── index.html                ← self-contained visual falsification study (GitHub Pages entry)
+├── README.md / PORTFOLIO_PMRA.md / BACKTEST_NOTES.md   ← study writeups; backtest/ = reproducible data
 ├── ARCHITECTURE.md / ROADMAP.md / API_REFERENCE.md / CALIBRATION_NOTES.md  ← (older docs; partly stale)
-├── run_copilot.bat           ← launcher for the unattended Scheduled Task
 ├── src/research/
 │   ├── models.py             ← Pydantic models (Market, Analysis, Signal, ScanRequest, ...)
 │   ├── db.py                 ← sqlite3 access layer (sync; the only raw-SQL module)

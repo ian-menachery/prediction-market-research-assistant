@@ -541,7 +541,7 @@ function SignalsView() {
         <div className="cal-note">
           The model's initial predictions and how they resolved — an early, <b>under-powered</b> sample
           (13 settled, ~5 independent events) that motivated the full backtesting study. Not
-          recommendations, and not the basis for the conclusion (see <code>dashboard.html</code>).
+          recommendations, and not the basis for the conclusion (see the study dashboard).
         </div>
         {sigs.length === 0 ? (
           <div className="empty">No signals yet — enable the auto-scan (<code>SCAN_INTERVAL_HOURS</code>) or run a scan with logging.</div>

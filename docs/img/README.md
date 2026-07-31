@@ -1,29 +1,23 @@
 # Screenshots
 
-The root `README.md` embeds three images from this folder. To (re)generate them:
+The root `README.md` embeds three PNGs from this folder — sections of the self-contained study dashboard
+(`../index.html`):
 
-1. `make run` and open <http://localhost:5000>.
-2. Capture each view at a window width of ~1200px and save as PNG here:
+| File | Section captured |
+| --- | --- |
+| `headline-result.png` | Header: the falsifiable hypothesis, kill condition, verdict, and the headline stat tiles. |
+| `calibration-curve.png` | The forecasting-calibration hero (small-sample reliability curve + "suggestive, not conclusive / powered study" framing). |
+| `strategy-graveyard.png` | The "strategy graveyard" small-multiples grid — every backtested edge, each net-negative after costs. |
 
-   | File | View (tab) | Needs | What it shows |
-   | --- | --- | --- | --- |
-   | `markets.png` | **Markets** | existing analyzed markets (no LLM call) | each estimate vs. the live price + divergence badge |
-   | `scanner.png` | **Scan (EV)** | one live scan (calls the LLM) | the results table ranked by annualized EV |
+## Regenerating them
 
-   The two views below need *resolved* data. Rather than wait, seed a **throwaway demo DB** with
-   synthetic (clearly-labeled `[DEMO]`) data — no API spend — and screenshot against that:
+These are captured straight from `../index.html` (no server, no API spend). With headless Chrome +
+Selenium (a dev dependency), render at a 1280px CSS width / 2× device-scale-factor and screenshot the
+three sections by element:
 
-   ```bash
-   RESEARCH_DB_PATH=data/demo.db PYTHONPATH=src python scripts/seed_demo.py
-   RESEARCH_DB_PATH=data/demo.db make run     # Leaderboard + Performance + Calibration now populate
-   # capture the shots, then delete data/demo.db (it must never feed real calibration)
-   ```
+- `header.wrap` → `headline-result.png`
+- the section containing `#chart-calib` → `calibration-curve.png`
+- the section containing `.grave-grid` → `strategy-graveyard.png`
 
-   | File | View (tab) | Needs |
-   | --- | --- | --- |
-   | `leaderboard.png` | **Leaderboard** | resolved markets (synthetic via `seed_demo`, or real) |
-   | `performance.png` | **Performance** | settled signals (synthetic via `seed_demo`, or real) |
-
-Optional: a short `demo.gif` of a scan run makes the README hero even stronger.
-
-Keep images reasonably small (< ~300 KB each); they're committed to the repo.
+Crop to the full section (no cut-off), trim surrounding whitespace, and keep each PNG reasonably small.
+Because `index.html` embeds its data inline, the screenshots always match the live dashboard.

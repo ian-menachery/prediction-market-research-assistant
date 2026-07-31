@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/ian-menachery/prediction-market-research-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/ian-menachery/prediction-market-research-assistant/actions/workflows/ci.yml)
 
+> ▶ **Live dashboard:** https://ian-menachery.github.io/prediction-market-research-assistant/ — the interactive study, no clone or run needed (served from `index.html` via GitHub Pages).
+
 **A falsification study.** PMRA tested one trading hypothesis, built the instrumentation to measure it
 honestly, and used that instrumentation to **disprove it**. The null result is the finding.
 
@@ -26,13 +28,28 @@ it.
 
 ### Start here
 
-- **[`dashboard.html`](dashboard.html)** — the visual study (self-contained; open by double-click). Hero
-  calibration curve, the four falsification passes, a "strategy graveyard" of every obvious edge, and two
-  judgment call-outs (a look-ahead leak caught; a nominally-significant result killed).
+- **[`index.html`](index.html)** — the visual study (self-contained; open by double-click, or view it
+  [live](https://ian-menachery.github.io/prediction-market-research-assistant/)). Hero calibration curve,
+  the four falsification passes, a "strategy graveyard" of every obvious edge, and two judgment call-outs
+  (a look-ahead leak caught; a nominally-significant result killed).
 - **[`PORTFOLIO_PMRA.md`](PORTFOLIO_PMRA.md)** — the narrative writeup.
 - **[`BACKTEST_NOTES.md`](BACKTEST_NOTES.md)** + **[`backtest/`](backtest/)** — the reproducible data and
   analysis scripts behind every chart (e.g. `python backtest/behavioral/analyze.py` regenerates the
   behavioral-study numbers offline).
+
+## The study at a glance
+
+![PMRA — the falsifiable hypothesis, its kill condition, and the headline result: falsified four independent ways, $6.97 spent, $0 capital deployed](docs/img/headline-result.png)
+
+*The hypothesis, its explicit kill condition, and the headline result — the conclusion rests on the statistically-powered 4,610-market study, not the small forecasting sample.*
+
+![Calibration curve: the model's predicted probabilities against how often those markets actually resolved YES, points off the diagonal](docs/img/calibration-curve.png)
+
+*Calibration curve: on the small resolved sample (n≈22) the model's forecasts landed worse than a coin flip — the anomaly that **motivated** a properly-powered test, not the basis for the conclusion.*
+
+![Strategy graveyard: a grid of small charts, one per backtested edge, each net-negative after fees](docs/img/strategy-graveyard.png)
+
+*Strategy graveyard: every obvious edge a retail participant would try, each tested net of the ~7% overround (the exchange's built-in margin) — a wall of systematic elimination, not a single failed bet.*
 
 > **Disclaimer:** estimates came from an LLM and are not financial advice; the tool is read-only against
 > the exchanges and never places orders. It is a research harness, not a product.
@@ -115,7 +132,7 @@ React/Babel CDN tags version-pinned, **Dependabot**, and **pre-commit** (ruff + 
 ## Project layout
 
 ```
-dashboard.html      self-contained visual falsification study (open by double-click)
+index.html          self-contained visual falsification study (GitHub Pages entry; open by double-click)
 PORTFOLIO_PMRA.md   narrative writeup
 BACKTEST_NOTES.md   the four passes + Politics gate, with numbers
 backtest/           reproducible backtest data + analysis scripts (behavioral study, look-ahead probe)

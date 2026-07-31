@@ -1,4 +1,4 @@
-> **Note:** early build doc from when this was framed as a trading tool. See [README.md](README.md) and [dashboard.html](dashboard.html) for the current framing — a falsification study.
+> **Note:** early build doc from when this was framed as a trading tool. See [README.md](README.md) and [index.html](index.html) for the current framing — a falsification study.
 
 # Roadmap
 
@@ -54,8 +54,8 @@ Goal: automation, intelligence, and portfolio simulation.
 - [x] Scheduled background fetching — stdlib `threading.Timer` in `scheduler.py` (not APScheduler); `SCAN_INTERVAL_HOURS` + `AUTO_RESOLUTION_INTERVAL_HOURS`
 - [x] Change detection: flag markets whose price moved since analysis — `db.is_stale` (4pp via `STALE_THRESHOLD`), surfaced as the stale badge
 - [x] Re-analysis suggestions for stale estimates — stale badge + manual re-analyze; optional auto-reanalysis via `STALE_REANALYZE_INTERVAL_HOURS` (`scanner.reanalyze_stale`)
-- [x] Portfolio simulator — `scripts/portfolio_sim.py` (crowd fade-to-0.5 Kelly baseline); own-signal realized P&L shown in the Signals view
-- [x] Backtesting — `scripts/backtest_crowd_calibration.py` (crowd calibration vs outcomes; read-only baseline, not a forward Claude backtest)
+- [x] Portfolio simulator (crowd fade-to-0.5 Kelly baseline); own-signal realized P&L shown in the Signals view *(early exploratory script; removed in cleanup)*
+- [x] Backtesting — crowd calibration vs outcomes, read-only baseline *(early exploratory script; removed in cleanup — superseded by the powered study in `BACKTEST_NOTES.md`)*
 - [x] Multi-model comparison — cross-model adversarial refutation (`CROSS_MODEL_ADVERSARIAL`, `analyzer.refute_edge`); verdict column in the scanner
 - [x] Model leaderboard — per-model LLM eval (Brier / log-loss / accuracy / Brier skill) via `calibration.model_leaderboard`; `/api/leaderboard` + Leaderboard view
 - [x] Signal performance dashboard — equity curve, return-on-cost, per-trade Sharpe, max drawdown via `performance.py`; `/api/performance` + Performance view
