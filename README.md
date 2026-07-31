@@ -7,6 +7,10 @@
 **A falsification study.** PMRA tested one trading hypothesis, built the instrumentation to measure it
 honestly, and used that instrumentation to **disprove it**. The null result is the finding.
 
+*(A **prediction market** lets you buy/sell contracts that pay $1 if a real-world event happens — so the
+price trades as a live probability. Kalshi is a US-regulated one covering elections, economic releases,
+weather, and more.)*
+
 > **Hypothesis (falsifiable):** a web-search LLM can estimate prediction-market (Kalshi) outcome
 > probabilities accurately enough to be profitable *net of fees and the bid-ask spread*.
 >

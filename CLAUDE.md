@@ -1,5 +1,11 @@
 # PMRA — Prediction Market Research Assistant (CLAUDE.md)
 
+> **Note — internal working doc.** This is the AI-assistant / operating-notes file; it predates the
+> falsification-study reframe, so its framing (and the −$585.85 modeled figure) is superseded. For the
+> current recruiter-facing framing and the evidence hierarchy — the **4,610-market behavioral study** is
+> load-bearing; the small forecasting sample (13 signals / 22 resolved, Brier 0.305) is an under-powered
+> anecdote that *motivated* it — see **README.md** and **index.html** (the live dashboard).
+
 ## Working agreement on planning
 
 Plan-first is **relaxed** (owner's call, 2026-06-13): commit changes directly to `main`

@@ -14,8 +14,11 @@ conclusions can be re-audited. Two work packages are recorded:
 
 **All three came back NULL. The verdict is unchanged: no accessible edge — stay wound down.**
 
-**Total real LLM spend across all of this work: $0.70** (7 web-search analyses in the Politics probe;
+**Total real LLM spend on the backtest work: $0.70** (7 web-search analyses in the Politics probe;
 the edge search and the entire behavioral study used free Kalshi public reads + local compute, $0).
+*(Scope note: the whole PMRA project cost ≈ **$6.97** — this $0.70 backtest campaign plus the earlier
+~$6.27 paper-trading flywheel that generated the calibration dataset. That ~$6.97 is the "total API
+spend" figure headlined on the dashboard and README.)*
 
 ---
 
@@ -84,8 +87,11 @@ id23 econ     KXPAYROLLS  YES cp=0.88 mid=0.74 fill=0.74 res=0 gross=-50.00 net=
 id24 weather  KXHIGHMIA   NO  cp=0.52 mid=0.63 fill=0.38 res=1 gross=-50.00 net=-50.00
 ```
 
-Broader view over all 24 resolved *analyses* (includes unbet markets): econ n=14 Brier 0.290,
-weather n=8 Brier 0.331 — both worse than a 0.25 coin flip.
+Broader view over the resolved *analyses* (includes unbet markets): **22 claude-sonnet-4-6 pairs**
+(the headline **Brier 0.305** aggregate) plus 2 gpt-5.5 = 24 total; by category, econ n=14 Brier 0.290
+and weather n=8 Brier 0.331 — both worse than a 0.25 coin flip (0.305 is their n-weighted average).
+**Small sample, though:** this is the under-powered anecdote that *motivated* the powered behavioral
+study (§3), which is what carries the conclusion — not this.
 
 ### Part 2 — Confidence-bias inversion check
 
