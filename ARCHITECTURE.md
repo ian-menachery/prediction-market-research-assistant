@@ -4,22 +4,22 @@
 
 ## Data flow
 ```
-Polymarket Gamma API
+Kalshi Trade API  (primary; Polymarket Gamma API = read-only signal source)
         ↓  httpx (sync, paginated)
-  polymarket.py
+  kalshi.py / polymarket.py  (dispatched by exchanges.py; EXCHANGE=kalshi for the study)
   (normalize, type, paginate)
         ↓
   SQLite: markets table
         ↓  on demand or batch
    analyzer.py
-   (Claude claude-sonnet-4-20250514 + web_search)
+   (Claude claude-sonnet-4-6 + web_search)
         ↓
   SQLite: analyses table
         ↓
   Flask routes (/api/*, JSON)
         ↓
-  Single-file React frontend (served by Flask, React via CDN — no build step)
-  (MarketList, MarketCard, ScannerView)
+  CDN-React frontend (served by Flask at :5000, React+Babel via CDN — no build step)
+  (frontend/index.html shell + js/{api.js, views.js, app.js})
 ```
 
 ---
@@ -69,8 +69,9 @@ Base URL: `https://api.elections.kalshi.com/trade-api/v2`. Differences from Poly
 ---
 
 ### Dual-exchange design
-The `EXCHANGE` env var (`polymarket` | `kalshi` | `both`, default `polymarket`) selects
-which fetch function(s) `scanner.py` calls — the only scanner change. Every `Market` and
+The `EXCHANGE` env var (`polymarket` | `kalshi` | `both`, default `polymarket`; the
+falsification study runs `EXCHANGE=kalshi`) selects which fetch function(s) `scanner.py`
+calls — the only scanner change. Every `Market` and
 `Signal` carries an `exchange` field (default `polymarket`) so markets, signals, and
 calibration stay attributable per exchange. Both exchanges feed the same
 analyzer → DB → routes pipeline; ids stay globally unique (Kalshi alphanumeric tickers
@@ -87,13 +88,13 @@ Uses a synchronous `anthropic.Anthropic()` client.
 def analyze_market(market: Market) -> Analysis
 ```
 
-Model: `claude-sonnet-4-20250514`
+Model: env-configurable via `ANALYSIS_MODEL`; default `claude-sonnet-4-6`
 Tool: `{"type": "web_search_20250305", "name": "web_search"}`
 
 **System prompt:**
 ```
 You are a calibrated prediction market analyst. Your job is to estimate
-the probability of the YES outcome for a Polymarket question using current
+the probability of the YES outcome for a prediction-market question using current
 web information.
 
 Respond ONLY with valid JSON — no markdown, no backticks, no explanation:
@@ -228,32 +229,28 @@ Startup: call `db.init_db()` once when the app boots.
 
 ---
 
-## Frontend components
+## Frontend
 
-### `api.ts`
-Central file for all backend calls. Base URL from `VITE_API_URL` env var (default `http://localhost:8000`). All fetch calls live here — no inline fetches in components.
+No build step — the UI is CDN-React + Babel loaded straight in the browser and served by Flask
+at `:5000`. Three plain `.js` files split by area (there is no TypeScript, no Vite, no bundler):
 
-### `MarketList`
-- Fetches `/markets` on mount and after refresh
-- Renders filterable list of `MarketCard`
-- Filters: category tag chips, "analyzed only", divergence threshold slider
-- Sort: by volume, divergence, time to close
-- Refresh button
+### `frontend/index.html`
+The shell + CSS. Loads React, ReactDOM, and Babel from CDN (version-pinned, guarded by a CI test),
+then the three `js/` modules. Same-origin with the Flask API, so no dev CORS is needed in practice.
 
-### `MarketCard`
-- Shows: category tag, question, market probability (large), 24h volume, time to close
-- If analyzed: Market X% → Claude Y%, divergence badge (±Npp, colored green/red/gray), edge label, factors chips, summary, confidence + disclaimer
-- If not analyzed: "Analyze with Claude ↗" button (disabled + spinner while analyzing)
-- "Re-analyze" link when analysis exists
-- History badge: "analyzed N times" → click to see history modal
+### `frontend/js/api.js`
+Central file for all backend calls — every `fetch` to `/api/*` lives here, no inline fetches in the
+views. Same-origin base URL (the app is served by Flask), so no `VITE_API_URL` / external base.
 
-### `ScannerView`
-- ScanRequest form: min volume, max age, min divergence, category filter, max markets
-- "Run scan" button → POST /scan
-- Progress indicator during scan (poll or SSE)
-- Results table: question (truncated), market%, claude%, divergence, edge, confidence
-- Sortable columns
-- Click row → expand to show full analysis inline
+### `frontend/js/views.js`
+The React components: `MarketCard` + `MarketsView` (market% → Claude% divergence, edge label, factors,
+confidence + disclaimer), `ScannerView` (the Scan/EV form + results), `SignalsView` (the "Predictions"
+tab — historical predictions and how they resolved, not recommendations), `CalibrationView`,
+`PerformanceView`, and `LeaderboardView`.
+
+### `frontend/js/app.js`
+Top-level app: `useState("markets")` tab routing across the six tabs — Markets, Scan (EV),
+Predictions (`SignalsView`), Performance, Calibration, Leaderboard — plus shared state/wiring.
 
 ---
 

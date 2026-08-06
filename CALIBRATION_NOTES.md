@@ -39,19 +39,13 @@ When setting up the integration, look at the existing tracker for:
 
 ---
 
-## Import script
+## Import script (design only — never built)
 
-`scripts/import_calibration.py` imports resolved analyses from the existing tracker:
+The original plan called for a `scripts/import_calibration.py` to import resolved analyses from the
+existing tracker. It was **not built**: the calibration dataset was generated in-tool (live analyses
+joined to resolved outcomes), not imported from the separate tracker, so the importer was never needed.
+The intended shape, for the record, was:
 
-```bash
-# Dry run first to see what would be imported
-python scripts/import_calibration.py --source ../calibration-tracker/data/ --dry-run
-
-# Actual import
-python scripts/import_calibration.py --source ../calibration-tracker/data/
-```
-
-The script should:
 1. Load existing resolved market data from the calibration tracker
 2. Check if a matching market exists in the local DB by market ID
 3. If market exists: insert a historical `Analysis` record with `resolved=True` and the known outcome
@@ -59,16 +53,19 @@ The script should:
 
 ---
 
-## Resolution tracking workflow (manual)
+## Resolution tracking workflow
 
-Until auto-resolution is built (Phase 4), the manual flow is:
+What shipped is **automatic** resolution: the scheduler runs a periodic resolution sweep
+(`AUTO_RESOLUTION_INTERVAL_HOURS`, free) that detects closed markets and marks all matching
+`Analysis` records with `resolved=True, resolution=outcome`. The manual "Mark resolved" button
+described in the original design was never built — auto-resolution replaced it. The
+`PUT /markets/{id}/resolution` endpoint still exists as a manual override:
 
-1. Market closes on Polymarket
-2. In the frontend: click "Mark resolved" on the market card
-3. UI prompts: "YES or NO?" — select the outcome
-4. Frontend calls `PUT /markets/{id}/resolution` with `{"outcome": true|false}`
-5. Backend marks all `Analysis` records for that market with `resolved=True, resolution=outcome`
-6. Calibration tracker picks these up on next import/export
+1. Market closes on the exchange
+2. Auto-resolution sweep detects it and records the outcome, or a manual
+   `PUT /markets/{id}/resolution` with `{"outcome": true|false}` sets it
+3. All `Analysis` records for that market get `resolved=True, resolution=outcome`
+4. Calibration reads these `(claude_prob, resolution)` pairs directly
 
 ---
 
@@ -104,7 +101,7 @@ When you want to feed data to the calibration tracker:
 GET /analyses?resolved=true&format=csv
 
 # Or programmatically via db.py
-analyses = await db.get_all_resolved_analyses()
+analyses = db.get_all_resolved_analyses()   # sync — no asyncio anywhere in this project
 # Each has: market_id, created_at, claude_prob, resolution
 # Feed to calibration tracker's Brier score calculator
 ```
