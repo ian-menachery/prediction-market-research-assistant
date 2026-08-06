@@ -1,7 +1,7 @@
 # PMRA — Prediction Market Research Assistant (CLAUDE.md)
 
 > **Note — internal working doc.** This is the AI-assistant / operating-notes file; it predates the
-> falsification-study reframe, so its framing (and the −$585.85 modeled figure) is superseded. For the
+> falsification-study reframe, so its framing (and the −$586.82 modeled figure) is superseded. For the
 > current recruiter-facing framing and the evidence hierarchy — the **4,610-market behavioral study** is
 > load-bearing; the small forecasting sample (13 signals / 22 resolved, Brier 0.305) is an under-powered
 > anecdote that *motivated* it — see **README.md** and **index.html** (the live dashboard).
@@ -36,8 +36,10 @@ review loop building over time.
 (Auto-launch note, verified 2026-07-30: a boot-triggered Scheduled Task `PolymarketResearchCopilot`
 still exists and is *enabled*, but its action points at the **stale pre-rename path**
 `...\polymarket-claude\scripts\start_app.bat` — which no longer exists after the rename to `PMRA` — so
-it **fails on boot (LastTaskResult=1) and never launches the app**. It is inert cruft; recommend
-deleting it. Even if it did launch, spending stays off because `SCAN_INTERVAL_HOURS` is empty.)
+it **fails on boot (LastTaskResult=1) and never launches the app**. It is inert cruft. Removing it
+needs an **elevated** `Unregister-ScheduledTask -TaskName 'PolymarketResearchCopilot'` — a non-elevated
+delete on 2026-08-06 returned Access Denied, so the owner should run it from an admin shell. Even if it
+did launch, spending stays off because `SCAN_INTERVAL_HOURS` is empty.)
 Every way to make money was tested and failed — forecasting, taker
 arbitrage, and (2026-07-30) a per-category edge search + a Politics-category backtest gate. Total real
 cost of the whole experiment: ~$6.97 in credits (~$6.27 original + $0.70 Politics probe), no real bets.
@@ -45,7 +47,7 @@ Full edge-search + backtest data: **`BACKTEST_NOTES.md`** (raw artifacts in `bac
 `SCAN_INTERVAL_HOURS` and `make run`, but read this verdict first.
 
 **Forecasting (out-predict the market) — the model lost, decisively:**
-- **1 win / 13 resolved · −$585.85 modeled P&L** (at the $50 modeled position; no real bets were placed —
+- **1 win / 13 resolved · −$586.82 modeled P&L** (at the $50 modeled position; no real bets were placed —
   only ~$6.27 of credits was actually spent).
 - **Econ 0/8 (−$400):** the model bet "June payrolls will be high" with 85–88% confidence across every
   threshold — all wrong (jobs came in weak). It has no forecasting edge on a number professional
@@ -170,7 +172,7 @@ PMRA/                         ← folder (was polymarket-claude)
 - *Near-dated bias:* `SCAN_MIN_DAYS_TO_CLOSE` / `SCAN_MAX_DAYS_TO_CLOSE` (resolve fast → calibrate fast).
 - *Sizing:* `BANKROLL_USD`, `KELLY_FRACTION` (¼-Kelly), `MAX_POSITION_USD` (hard cap).
 
-**Reading the UI** (`http://localhost:5000`): **Signals** = actionable trades (recommended stake +
+**Reading the UI** (`http://localhost:5000`): **Predictions** = historical model predictions, shown as evidence — never actionable (as-of-analysis stake +
 Kalshi link), the ROI scoreboard (realized P&L − credit spend), and the "⚠ Extreme divergences —
 review" diagnosis panel; **Calibration** = progress toward 50 resolved pairs; **Performance** =
 by_category P&L. `/api/health` (+ `data/health.jsonl` heartbeat) shows Kalshi schema liveness.

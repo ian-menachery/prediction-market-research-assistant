@@ -2,7 +2,7 @@
 
 Durable record of the post-wind-down edge-search work. Nothing here is load-bearing for the running
 app (it stays wound down); this exists so the analysis, data, and reasoning are **not lost** and the
-conclusions can be re-audited. Two work packages are recorded:
+conclusions can be re-audited. Three work packages are recorded:
 
 1. **Edge search** (2026-07-12) — decompose existing P&L, test bias inversion, characterize the
    untested market universe, and check for structural arbitrage.
@@ -177,7 +177,7 @@ positive net P&L on already-resolved markets at n ≥ 30. Read-only + free re-an
 
 ### Look-ahead demonstrated empirically (probe, $0.70 total)
 
-Ran PMRA's actual analyzer on 6 resolved markets (raw: `backtest/politics_gate_probe_out.jsonl`).
+Ran PMRA's actual analyzer on 6 resolved markets (raw: `backtest/archive/politics_gate_probe_out.jsonl`).
 **6 of 6 leaked the outcome** — every summary cites post-open, often post-resolution facts:
 
 | Market | Model | Conf | Actual | Leak evidence (verbatim) |
